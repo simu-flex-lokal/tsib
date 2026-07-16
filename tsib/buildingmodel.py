@@ -55,7 +55,14 @@ class Building(object):
 
         self.IDentries = self.configurator.IDentries
 
-        self.thermalmodel = tsib.Building5R1C(self.cfg)
+        # thermal zone parameterization (design heat load etc.); the
+        # energy system model itself is composed in _get_heatload_profile
+        self.zone_config = tsib.ThermalZoneConfig(self.cfg)
+
+        # last solved energy system model and its results
+        self.energysystem = None
+        self._detailed_results = pd.DataFrame(index=self.cfg["weather"].index)
+        self._static_results = {}
 
         # status if the profiles have already been initialized
         self._has_occupancy_profiles = False
@@ -152,7 +159,7 @@ class Building(object):
             self.timeseries.index = pd.to_datetime(
                 self.timeseries.index, utc=True
             )
-            self.thermalmodel.static_results = pd.read_csv(
+            self._static_results = pd.read_csv(
                 datapath2, index_col=0, header=None
             ).squeeze().to_dict()
             return True
@@ -384,36 +391,43 @@ class Building(object):
                     self.cfg
                 )
 
-        logging.info('Heat load profiles are simulated. ' 
+        logging.info('Heat load profiles are simulated. '
         + 'This can take a few minutes.')
-        # get thermal load with 5R1C model
+        # get thermal load with the 5R1C zone in an energy system model
         if self.cfg["refurbishment"]:
-            # save refurbishment satus
-            befRef = True
             warnings.warn(
                 "For the simulation the refurbishment decisions"
                 + " are deactivated",
                 UserWarning,
             )
-            self.cfg["refurbishment"] = False
-        else:
-            befRef = False
 
-        # run simulation
-        self.thermalmodel.sim5R1C(tee=False)
+        # compose and solve the energy system: a single thermal zone
+        # without investment decisions (pure heat load simulation)
+        esM = tsib.EnergySystemModel(
+            self.cfg["weather"].index, wacc=self.cfg["WACC"]
+        )
+        esM.add(
+            tsib.ThermalZone5R1C(
+                "thermalzone", self.zone_config, refurbishment=False
+            )
+        )
+        esM.solve(tee=False)
+        self.energysystem = esM
 
-        # overwrite refurbishment options again
-        self.cfg["refurbishment"] = befRef
+        zone_results = esM.results("thermalzone")
+        self._detailed_results = zone_results["timeseries"].copy()
+        self._detailed_results["Electricity Load"] = self.cfg["elecLoad"].values
+        self._static_results = zone_results["static"]
 
         self._has_heat_profiles = True
-        
-        # define relevant time series 
+
+        # define relevant time series
         self._heat_profile_names = ['Heating Load', 'Cooling Load']
 
         self.units.update({'Heating Load':'kW_{th}', 'Cooling Load':'kW_{th}', })
-    
+
         # append simulation (TODO improve this call)
-        self.timeseries = self.timeseries.join(self.thermalmodel.detailedResults[self._heat_profile_names])
+        self.timeseries = self.timeseries.join(self._detailed_results[self._heat_profile_names])
 
         return self.timeseries[self._heat_profile_names]
 
@@ -428,7 +442,7 @@ class Building(object):
         """
         logging.warning('Method to generate the nominal heat transfer coefficient of the heating system has not been validated."')
         # get design heat load
-        self.design_Q = self.thermalmodel.calcDesignHeatLoad()
+        self.design_Q = self.zone_config.calcDesignHeatLoad()
 
         # derive the heat transfer coefficient of the heating system kW/K
         self.design_H_heat = self.design_Q / (self.cfg['T_sup'] - 20.)
@@ -553,7 +567,7 @@ class Building(object):
             "static_results is deprecated, use timeseries instead",
                     DeprecationWarning
         )
-        return self.thermalmodel.static_results 
+        return self._static_results
 
     @property
     def detailedResults(self):
@@ -561,7 +575,7 @@ class Building(object):
             "detailedResults is deprecated, use timeseries instead",
                     DeprecationWarning
         )
-        return self.thermalmodel.detailedResults 
+        return self._detailed_results
 
     def sim5R1C(self):
         '''

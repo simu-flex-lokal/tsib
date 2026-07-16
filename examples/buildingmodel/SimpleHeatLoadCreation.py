@@ -28,7 +28,6 @@ import tsib
 import tsib
 import tsib.buildingmanager as bm
 import tsib
-import tsib.thermal.utils as utils
 
 # %%
 import matplotlib.pyplot as plt
