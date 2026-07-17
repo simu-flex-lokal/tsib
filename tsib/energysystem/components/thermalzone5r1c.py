@@ -634,6 +634,12 @@ class ThermalZone5R1C(Component):
         # the mass node temperature difference to the environment; fixed
         # elements collapse to a plain linear expression without any
         # additional variables
+        #
+        # POTENTIAL BUG (kept for parity with the pre-refactor model):
+        # only the opaque elements may use (T_m - T_e) per Schuetz et al.
+        # 2017 - eq. 20/9. Windows should be driven by (T_s - T_e) (eq. 21)
+        # and Ventilation by (T_air - T_e) (eq. 22).
+        # See docs/model-deviations.md, items 1 and 2.
         driver = lambda b, t: b.T_m[t] - T_e[t]
         for element, inv in self.envelope_investments.items():
             self._element_flows[element] = inv.switched_flow(
@@ -690,6 +696,12 @@ class ThermalZone5R1C(Component):
 
         # 3) energy balance of the air node, supplied by heating and
         # cooling
+        #
+        # POTENTIAL BUG (kept for parity with the pre-refactor model):
+        # per Schuetz et al. 2017 - eq. 22 the air node receives the
+        # internal gain Q_ia = 0.5 * Q_ig (eq. 14), not the surface gain
+        # Q_st (eq. 19). The pre-refactor model computed a Q_ia term and
+        # never used it. See docs/model-deviations.md, item 3.
         def air_node_balance(b, t):
             return (
                 flows["Ventilation"](b, t)
@@ -703,6 +715,13 @@ class ThermalZone5R1C(Component):
         # without a smart thermostat the zone is kept at the lower
         # comfort temperature, occupancy control and night reduction
         # relax the band while absent/asleep
+        #
+        # LIMITATION (deliberate, Kotzur 2018 - eq. 3.2): comfort_ub is a
+        # hard bound, so gains above the band force the unbounded Q_cool
+        # even for a building without any cooling device. Schuetz et al.
+        # 2017 has no upper bound at all (eq. 26) and free-floats instead.
+        # See docs/model-deviations.md item 4, written up in full in
+        # docs/open-problem-summer-overheating.md.
         sel_smart = lambda b: self.control.selection(b, "SmartThermostat")
         sel_occ = lambda b: self.control.selection(b, "Occupancy")
         sel_night = lambda b: self.control.selection(b, "NightReduction")
