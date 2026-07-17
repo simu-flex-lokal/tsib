@@ -32,3 +32,4 @@ from .components.storage import StorageComponent, ElectricalStorage, ThermalStor
 from .components.pv import PVGenerator
 from .components.grid import GridConnection
 from .components.demand import FixedDemand
+from .components.heatpump import HeatPump

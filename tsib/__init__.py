@@ -26,5 +26,6 @@ from .energysystem import (
     PVGenerator,
     GridConnection,
     FixedDemand,
+    HeatPump,
 )
 from .household.profiles import simSingleHousehold, simHouseholdsParallel, getHouseholdProfiles
