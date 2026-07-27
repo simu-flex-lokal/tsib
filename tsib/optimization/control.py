@@ -7,7 +7,7 @@ bookkeeping (selection/fixing/cost), but need no Big-M constraints as
 the comfort bounds are linear in the selections.
 """
 
-from ..core.investment import DiscreteOptionInvestment
+from .investment import DiscreteOptionInvestment
 from .envelope import load_control_options
 
 

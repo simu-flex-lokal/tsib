@@ -11,7 +11,7 @@ import pandas as pd
 
 import tsib
 import tsib.data
-from tsib.energysystem import ThermalZoneConfig
+from tsib.optimization import ThermalZoneConfig
 
 
 def get_example_cfg():

@@ -56,11 +56,13 @@ class Building(object):
         self.IDentries = self.configurator.IDentries
 
         # thermal zone parameterization (design heat load etc.); the
-        # energy system model itself is composed in _get_heatload_profile
+        # energy system itself is composed in _get_heatload_profile/optimize
         self.zone_config = tsib.ThermalZoneConfig(self.cfg)
 
-        # last solved energy system model and its results
+        # last solved energy system and its solph model/nodes
         self.energysystem = None
+        self.model = None
+        self.nodes = {}
         self._detailed_results = pd.DataFrame(index=self.cfg["weather"].index)
         self._static_results = {}
 
@@ -402,19 +404,16 @@ class Building(object):
             )
 
         # compose and solve the energy system: a single thermal zone
-        # without investment decisions (pure heat load simulation)
-        esM = tsib.EnergySystemModel(
-            self.cfg["weather"].index, wacc=self.cfg["WACC"]
+        # supplied by priced heat/cool sources (pure heat load simulation)
+        spec = tsib.optimization.presets.heat_load_only()
+        es, nodes = tsib.optimization.build_system(
+            spec, self.zone_config, timeindex=self.cfg["weather"].index
         )
-        esM.add(
-            tsib.ThermalZone5R1C(
-                "thermalzone", self.zone_config, refurbishment=False
-            )
-        )
-        esM.solve(tee=False)
-        self.energysystem = esM
+        model, _ = tsib.optimization.solve(es, tee=False)
+        self.energysystem = es
+        self.model = model
 
-        zone_results = esM.results("thermalzone")
+        zone_results = tsib.optimization.zone_results(model, nodes["thermalzone"])
         self._detailed_results = zone_results["timeseries"].copy()
         self._detailed_results["Electricity Load"] = self.cfg["elecLoad"].values
         self._static_results = zone_results["static"]
@@ -430,6 +429,59 @@ class Building(object):
         self.timeseries = self.timeseries.join(self._detailed_results[self._heat_profile_names])
 
         return self.timeseries[self._heat_profile_names]
+
+
+    def optimize(self, spec, solver=None, tee=False, solverOpts=None):
+        """
+        Builds and solves an arbitrary energy system for this building.
+
+        This is the building block kit entry point: it pairs a system
+        description with the building's resolved configuration, so the same
+        spec can be applied to any parameterized building. Profile
+        references in the spec ("@elecLoad", "@cop", ...) are resolved
+        against this building's configuration.
+
+        Occupancy profiles are simulated first if they are not available
+        yet, since they drive the internal gains of the thermal zone.
+
+        Parameters
+        ----------
+        spec: SystemSpec or dict, required
+            e.g. from `tsib.optimization.presets`.
+        solver: str, optional (default: $SOLVER or auto-detected)
+        tee: bool, optional (default: False)
+            Stream the solver log.
+        solverOpts: dict, optional
+
+        Returns
+        -------
+        dict of component name -> results. The thermal zone reports
+        "timeseries"/"static"; every other component its flows and, where
+        invested, its capacity.
+
+        Examples
+        --------
+        >>> from tsib.optimization import presets
+        >>> results = bdg.optimize(presets.hp_pv_battery(pv_kwp=8.0))
+        >>> results["thermalzone"]["timeseries"]["Heating Load"].sum()
+        """
+        if not self._has_occupancy_profiles:
+            self._get_occupancy_profile(self.cfg)
+
+        es, nodes = tsib.optimization.build_system(
+            spec, self.zone_config, timeindex=self.cfg["weather"].index
+        )
+        model, _ = tsib.optimization.solve(
+            es, solver=solver, tee=tee, solverOpts=solverOpts
+        )
+        self.energysystem = es
+        self.model = model
+        self.nodes = nodes
+
+        return tsib.optimization.node_results(
+            model, nodes, index=self.cfg["weather"].index
+        )
+
 
     def getHeatingSystem(self):
         """

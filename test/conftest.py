@@ -19,6 +19,18 @@ BUILDING_SET = pd.read_csv(
     index_col=0,
 )
 
+GOLDEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "golden")
+
+#: profiles which come from the stochastic tsorb occupancy simulation and
+#: are therefore pinned by the golden fixtures
+GOLDEN_INPUT_KEYS = ["Q_ig", "occ_nothome", "occ_sleeping"]
+
+
+def golden(filename):
+    """Path of a golden reference fixture captured from the pre-migration
+    tsib.energysystem stack (see data/golden/_generate.py)."""
+    return os.path.join(GOLDEN_DIR, filename)
+
 
 def example_building(ix=24, **kwargs):
     """The reference building used across the heat load tests: a
@@ -60,3 +72,25 @@ def zone_cfg_with_occupancy(ix=24, n_steps=None, **kwargs):
             else:
                 cfg[key] = value.iloc[:n_steps]
     return cfg, ID
+
+
+def golden_zone_cfg(n_steps=None, **kwargs):
+    """
+    Reference building configuration with the stochastic occupancy profiles
+    replaced by the ones pinned in the golden fixtures.
+
+    This makes the migration parity tests hermetic: they compare the solph
+    zone against the pre-migration results on *identical* inputs, and cannot
+    drift if the tsorb occupancy model changes.
+    """
+    cfg, _ = zone_cfg_with_occupancy(n_steps=n_steps, **kwargs)
+    source = "zone_168h_inputs.csv" if n_steps == 168 else "zone_year_inputs.csv.gz"
+    pinned = pd.read_csv(golden(source), index_col=0)
+    limit = n_steps if n_steps is not None else len(pinned)
+    if limit > len(pinned):
+        raise ValueError(
+            "Golden inputs cover {} steps, {} requested".format(len(pinned), limit)
+        )
+    for key in GOLDEN_INPUT_KEYS:
+        cfg[key] = pinned[key].values[:limit]
+    return cfg

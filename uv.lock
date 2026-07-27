@@ -155,6 +155,15 @@ css = [
 ]
 
 [[package]]
+name = "blinker"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/28/9b3f50ce0e048515135495f198351908d99540d69bfdc8c1d15b73dc55ce/blinker-1.9.0.tar.gz", hash = "sha256:b4ce2265a7abece45e7cc896e98dbebe6cead56bcf805a3d23136d145f5445bf", size = 22460, upload-time = "2024-11-08T17:25:47.436Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl", hash = "sha256:ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc", size = 8458, upload-time = "2024-11-08T17:25:46.184Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.6.17"
 source = { registry = "https://pypi.org/simple" }
@@ -520,6 +529,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
+]
+
+[[package]]
+name = "dill"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
 ]
 
 [[package]]
@@ -1546,6 +1564,50 @@ wheels = [
 ]
 
 [[package]]
+name = "oemof-network"
+version = "0.5.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "blinker" },
+    { name = "dill" },
+    { name = "networkx" },
+    { name = "oemof-tools" },
+    { name = "pandas" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fe/4a/24b415b0d2bd50a55fdf19ea81c795c26c11ddcd10ac79cbc26a44e0c2e7/oemof_network-0.5.2.tar.gz", hash = "sha256:0cc720402b29f26e4712a8121f337b6a0e1eee07b7908c2ef042313837ed95ac", size = 34001, upload-time = "2026-01-29T20:35:29.184Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/26/32c19c52ee6e37fba90229cee5e892071794aa3d9a41adc6023e91c84a00/oemof_network-0.5.2-py3-none-any.whl", hash = "sha256:8fdcf37f7e7b1e3ed61b3b246465de1ace50029fe7bd25dcbd01573a6ee915c8", size = 19497, upload-time = "2026-01-29T20:35:27.342Z" },
+]
+
+[[package]]
+name = "oemof-solph"
+version = "0.6.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "blinker" },
+    { name = "dill" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "oemof-network" },
+    { name = "oemof-tools" },
+    { name = "pandas" },
+    { name = "pyomo" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0f/d6/eb0e28c5fa32b74311a839aacdfa8882a8c285b9900d04a56a491bfb9851/oemof_solph-0.6.4.tar.gz", hash = "sha256:275d0f7fd963c0fe195730f0dbd9d1c63166e0dfab643eb2a4ebb053952ba5c5", size = 11984866, upload-time = "2026-04-17T06:49:38.921Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/29/17480280e45059da75df4c84ecd589a64ec026442d30febe075b6ac56f30/oemof_solph-0.6.4-py3-none-any.whl", hash = "sha256:f5d3392826a154bf453872f790bcc66898c78c877c5ca00aa46a5242fe1aabfa", size = 129491, upload-time = "2026-04-17T06:49:31.121Z" },
+]
+
+[[package]]
+name = "oemof-tools"
+version = "0.4.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/db/42490e632d5e64edf1bd6aa24d6e5844475288833a8a8008a8c10dfe3a2e/oemof.tools-0.4.3.tar.gz", hash = "sha256:f64851573fec793e3fc2046aa434b2076707c71861eb756e2b48688d1a7d673c", size = 19647, upload-time = "2023-10-12T17:49:17.505Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6e/67/3d3b695ca4e8fc63b92fba790f48b25ebb785a5ed9971e88865969e811ad/oemof.tools-0.4.3-py2.py3-none-any.whl", hash = "sha256:dd951cf4570cde706ea3e9191c52007f45582b8a864398cd8c375938cf087c57", size = 7485, upload-time = "2023-10-12T17:49:15.665Z" },
+]
+
+[[package]]
 name = "openpyxl"
 version = "3.1.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2436,6 +2498,7 @@ source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "oemof-solph" },
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pvlib" },
@@ -2469,6 +2532,7 @@ requires-dist = [
     { name = "highspy", marker = "extra == 'highs'" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "oemof-solph", specifier = ">=0.6.4" },
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pvlib" },
