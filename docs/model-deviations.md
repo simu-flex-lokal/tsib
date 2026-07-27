@@ -1,11 +1,13 @@
 # Known deviations of the 5R1C zone from its sources
 
-**Nothing here is fixed.** The implementation deliberately reproduces the pre-refactor
-`thermal/model5R1C.py` bit-for-bit, so the results stay comparable. This file records what looks
-wrong and why it was left alone, so it gets investigated on purpose rather than rediscovered by
-accident — or "corrected" without realising the reference numbers move.
+**Nothing here is fixed.** The implementation deliberately reproduces the original
+`thermal/model5R1C.py` bit-for-bit, so the results stay comparable. That parity survived two
+rewrites — the component refactor and the migration to oemof-solph — and is now pinned by the
+golden fixtures in `test/data/golden/`. This file records what looks wrong and why it was left
+alone, so it gets investigated on purpose rather than rediscovered by accident — or "corrected"
+without realising the reference numbers move.
 
-**Read this before changing any equation in `components/thermalzone5r1c.py`.**
+**Read this before changing any equation in `optimization/zone5r1c.py`.**
 
 ## Sources
 
@@ -37,10 +39,10 @@ its extensions"* — and states only two comfort bounds of its own (Eqs. 3.1/3.2
 
 ## 1. Windows are driven by the mass node instead of the surface node
 
-**Likely bug. Unmeasured.** `components/thermalzone5r1c.py:643` (driver), `:689` (use)
+**Likely bug. Unmeasured.** `optimization/zone5r1c.py:341` (driver), `:389` (use)
 
 Every envelope element shares one driver, `driver = lambda b, t: b.T_m[t] - T_e[t]`, which is
-passed to `switched_flow` for all elements — including `Windows`. Eq. (21) couples windows to the
+used by `envelope_flow` for all elements — including `Windows`. Eq. (21) couples windows to the
 **surface** node:
 
 $$H_{tr,ms}(\theta_s - \theta_m) + H_{tr,is}(\theta_s - \theta_{air}) + \underbrace{H_{tr,w}(\theta_s - \theta_e)}_{\text{code uses } (T_m - T_e)} = \phi_{st}$$
@@ -53,11 +55,11 @@ closely. Driving a low-inertia, high-$U$ element from the slow node misplaces bo
 amplitude of the window losses.
 
 **To verify:** give `Windows` the driver `b.T_s[t] - T_e[t]`; re-run
-`test_energysystem_zone.py::test_heatload_reference` and the [K18] Fig. 3.8 IWU comparison.
+`test_optimization_zone.py::test_heatload_reference` and the [K18] Fig. 3.8 IWU comparison.
 
 ## 2. Ventilation is driven by the mass node instead of the air node
 
-**Likely bug. Unmeasured.** `components/thermalzone5r1c.py:643` (driver), `:707` (use)
+**Likely bug. Unmeasured.** `optimization/zone5r1c.py:341` (driver), `:402` (use)
 
 Same shared driver. Eq. (22) couples ventilation to the **air** node:
 
@@ -71,7 +73,7 @@ $H_{ve} = \kappa_{air}\,\rho_{air}\,q_{ve,avg}$ — a pure air heat-capacity flo
 
 ## 3. The air node receives the surface gain instead of the internal gain
 
-**Likely bug. Unmeasured.** `components/thermalzone5r1c.py:709`
+**Likely bug. Unmeasured.** `optimization/zone5r1c.py:404`
 
 The air balance uses `self._gain_surface_node(b, t)` — that is $\phi_{st}$, the window/solar
 weighted surface gain of Eq. (19). Per Eq. (22) the right-hand side is $\phi_{ia} + \phi_{HC}$,
@@ -82,8 +84,8 @@ $$\phi_{ia} = 0.5 \cdot \phi_{int}$$
 — half the internal gains, with no solar term at all. $\phi_{st}$ belongs to the *surface*
 balance (Eq. 21), where the code does use it correctly.
 
-The pre-refactor model computed a `Q_ia` term and never used it; the port dropped it as dead
-code. That dead variable suggests an old slip rather than a decision.
+The original model computed a `Q_ia` term and never used it; the component refactor dropped it
+as dead code. That dead variable suggests an old slip rather than a decision.
 
 **Why it plausibly matters:** a magnitude error rather than a phase error — solar-weighted gains
 are injected into the air node where the standard puts only half the internal gains.
@@ -92,11 +94,11 @@ are injected into the air node where the standard puts only half the internal ga
 
 ## 4. Fictitious cooling against a hard comfort ceiling
 
-**Deliberate in [K18], but a real modelling limitation.** `:516` (`Q_cool`), `:733`
-(`comfort_ub`), `:794` (`cool_cost`)
+**Deliberate in [K18], but a real modelling limitation.** `optimization/zone5r1c.py:308`
+(`Q_cool_internal`), `:415` (`comfort_ub`), `optimization/presets.py:19` (`DEFAULT_COOL_COST`)
 
 `comfort_ub` is a hard constraint and `Q_cool` is an unbounded non-negative variable priced at
-`cool_cost = 0.02 EUR/kWh`. Gains above the band therefore *force* cooling — including in
+`DEFAULT_COOL_COST = 0.02 EUR/kWh`. Gains above the band therefore *force* cooling — including in
 buildings with no cooling device, which is the norm for the German residential stock this model
 targets. There is no parameter to declare that a building cannot cool.
 

@@ -35,7 +35,7 @@ def factory(name):
     return register
 
 
-def build_component(ctype, name, params, buses, cfg, n_steps):
+def build_component(ctype, name, params, buses, cfg, n_steps, step_size_h):
     """Dispatches to the registered factory of `ctype`."""
     if ctype not in COMPONENT_FACTORIES:
         raise ValueError(
@@ -43,7 +43,9 @@ def build_component(ctype, name, params, buses, cfg, n_steps):
                 ctype, name, sorted(COMPONENT_FACTORIES)
             )
         )
-    return COMPONENT_FACTORIES[ctype](name, params, buses, cfg, n_steps)
+    return COMPONENT_FACTORIES[ctype](
+        name, params, buses, cfg, n_steps, step_size_h
+    )
 
 
 def _bus(buses, params, key, name):
@@ -68,7 +70,7 @@ def _profile(params, key, cfg, n_steps, name, default=None):
                            "{}.{}".format(name, key))
 
 
-def _investment(params, n_steps, wacc):
+def _investment(params, hours, wacc):
     """
     Turns capex/lifetime spec entries into a solph Investment.
 
@@ -76,13 +78,16 @@ def _investment(params, n_steps, wacc):
     annuity and the horizon scaling stay on the tsib side - the same
     convention the pre-migration framework used, which is what keeps a
     72 hour design study trading capex against opex correctly.
+
+    `hours` is the length of the horizon in hours, not the number of steps,
+    so the scaling stays correct at sub-hourly resolution.
     """
     capex = params.pop("capex_per_unit", None)
     if capex is None:
         return None
     lifetime = params.pop("lifetime")
     opex_fix_share = params.pop("opex_fix_share", 0.0)
-    year_fraction = n_steps / 8760.0
+    year_fraction = hours / 8760.0
     ep_costs = capex * (annuity_factor(lifetime, wacc) + opex_fix_share) * year_fraction
     return solph.Investment(
         ep_costs=ep_costs,
@@ -91,9 +96,9 @@ def _investment(params, n_steps, wacc):
     )
 
 
-def _capacity(params, n_steps, wacc):
+def _capacity(params, hours, wacc):
     """Either a fixed nominal capacity or a free Investment."""
-    investment = _investment(params, n_steps, wacc)
+    investment = _investment(params, hours, wacc)
     if investment is not None:
         return investment
     return params.pop("capacity", None)
@@ -105,7 +110,7 @@ def _capacity(params, n_steps, wacc):
 
 
 @factory("demand")
-def _demand(name, params, buses, cfg, n_steps):
+def _demand(name, params, buses, cfg, n_steps, step_size_h):
     """Inflexible load profile [kW]."""
     bus = _bus(buses, params, "bus", name)
     profile = _profile(params, "profile", cfg, n_steps, name)
@@ -118,7 +123,7 @@ def _demand(name, params, buses, cfg, n_steps):
 
 
 @factory("source")
-def _source(name, params, buses, cfg, n_steps):
+def _source(name, params, buses, cfg, n_steps, step_size_h):
     """Unlimited supply at a price [EUR/kWh] - the generic heat/cool supply."""
     bus = _bus(buses, params, "bus", name)
     price = _profile(params, "price", cfg, n_steps, name, default=0.0)
@@ -132,7 +137,7 @@ def _source(name, params, buses, cfg, n_steps):
 
 
 @factory("grid")
-def _grid(name, params, buses, cfg, n_steps):
+def _grid(name, params, buses, cfg, n_steps, step_size_h):
     """
     Grid connection: import at a price and optionally export at a
     remuneration. Two solph nodes, because solph prices directed edges.
@@ -172,7 +177,7 @@ def _grid(name, params, buses, cfg, n_steps):
 
 
 @factory("meter")
-def _meter(name, params, buses, cfg, n_steps):
+def _meter(name, params, buses, cfg, n_steps, step_size_h):
     """
     Sub-meter between two buses: a lossless (or efficiency-scaled) transfer
     which prices the metered throughput. This is the primitive of a
@@ -195,13 +200,13 @@ def _meter(name, params, buses, cfg, n_steps):
 
 
 @factory("pv")
-def _pv(name, params, buses, cfg, n_steps):
+def _pv(name, params, buses, cfg, n_steps, step_size_h):
     """PV generator driven by a specific yield profile [kW/kWp]."""
     bus = _bus(buses, params, "bus", name)
     yield_profile = _profile(params, "specific_yield", cfg, n_steps, name)
     curtailable = params.pop("curtailable", True)
     wacc = params.pop("wacc", 0.0)
-    capacity = _capacity(params, n_steps, wacc)
+    capacity = _capacity(params, n_steps * step_size_h, wacc)
     # curtailable: the profile is an upper bound; otherwise it is fixed
     limit = {"maximum": yield_profile} if curtailable else {"fix": yield_profile}
     return [
@@ -213,7 +218,7 @@ def _pv(name, params, buses, cfg, n_steps):
 
 
 @factory("heat_pump")
-def _heat_pump(name, params, buses, cfg, n_steps):
+def _heat_pump(name, params, buses, cfg, n_steps, step_size_h):
     """
     Heat pump coupling an electricity and a heat bus at a time varying COP.
 
@@ -225,7 +230,7 @@ def _heat_pump(name, params, buses, cfg, n_steps):
     bus_out = _bus(buses, params, "bus_out", name)
     cop = _profile(params, "cop", cfg, n_steps, name)
     wacc = params.pop("wacc", 0.0)
-    capacity = _capacity(params, n_steps, wacc)
+    capacity = _capacity(params, n_steps * step_size_h, wacc)
 
     if hasattr(cop, "__len__"):
         conversion = [1.0 / c if c > 0 else 0.0 for c in cop]
@@ -250,26 +255,26 @@ def _heat_pump(name, params, buses, cfg, n_steps):
 
 
 @factory("battery")
-def _battery(name, params, buses, cfg, n_steps):
+def _battery(name, params, buses, cfg, n_steps, step_size_h):
     """Electrical storage. `balanced=True` reproduces the periodic SOC wrap."""
-    return _storage(name, params, buses, cfg, n_steps)
+    return _storage(name, params, buses, cfg, n_steps, step_size_h)
 
 
 @factory("thermal_storage")
-def _thermal_storage(name, params, buses, cfg, n_steps):
+def _thermal_storage(name, params, buses, cfg, n_steps, step_size_h):
     """
     Hot water storage. The standby heat loss maps onto solph's
     `fixed_losses_absolute`, which is strictly more capable than the
     pre-migration `standby_loss_kW` (it also supports relative losses).
     """
     params.setdefault("fixed_losses_absolute", params.pop("standby_loss_kW", 0.0))
-    return _storage(name, params, buses, cfg, n_steps)
+    return _storage(name, params, buses, cfg, n_steps, step_size_h)
 
 
-def _storage(name, params, buses, cfg, n_steps):
+def _storage(name, params, buses, cfg, n_steps, step_size_h):
     bus = _bus(buses, params, "bus", name)
     wacc = params.pop("wacc", 0.0)
-    capacity = _capacity(params, n_steps, wacc)
+    capacity = _capacity(params, n_steps * step_size_h, wacc)
     losses = _profile(params, "fixed_losses_absolute", cfg, n_steps, name, default=0.0)
 
     kwargs = dict(
@@ -299,7 +304,7 @@ def _storage(name, params, buses, cfg, n_steps):
 
 
 @factory("zone5r1c")
-def _zone5r1c(name, params, buses, cfg, n_steps):
+def _zone5r1c(name, params, buses, cfg, n_steps, step_size_h):
     """The 5R1C thermal zone - the one custom component."""
     from .zone5r1c import ThermalZone5R1C
 

@@ -179,6 +179,29 @@ def test_annuity_factor():
     assert annuity_factor(20, 0.05) == pytest.approx(0.080242, abs=1e-6)
 
 
+def test_investment_scaling_is_resolution_independent():
+    """Annualized capex is scaled by the horizon in *hours*, not in steps:
+    the same wall-clock horizon must cost the same at any resolution."""
+    def ep_costs(freq, periods):
+        index = pd.date_range("2010-01-01", periods=periods, freq=freq)
+        cfg = {"weather": pd.DataFrame({"T": np.zeros(periods)}, index=index)}
+        spec = SystemSpec()
+        spec.add_bus("elec")
+        spec.add_component(
+            "pv", "pv", bus="elec", specific_yield=0.5, wacc=0.05,
+            capex_per_unit=1000.0, lifetime=20.0,
+        )
+        spec.add_component("demand", "demand", bus="elec", profile=1.0)
+        _, nodes = build_system(spec, cfg, timeindex=index)
+        bus = next(iter(nodes["pv"].outputs))
+        # solph moves an Investment passed as nominal_capacity to .investment
+        return nodes["pv"].outputs[bus].investment.ep_costs
+
+    hourly = ep_costs("h", 72)          # 72 h
+    quarterly = ep_costs("15min", 288)  # the same 72 h in 15-minute steps
+    assert hourly[0] == pytest.approx(quarterly[0], rel=1e-12)
+
+
 # --- solving -----------------------------------------------------------
 
 

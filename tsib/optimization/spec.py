@@ -156,6 +156,10 @@ def build_system(spec, cfg, timeindex=None):
     # drop the last hour of the year.
     es = solph.EnergySystem(timeindex=timeindex, infer_last_interval=True)
 
+    # step size in hours; investment costing is scaled by the horizon in
+    # hours rather than in steps, so it stays correct below hourly resolution
+    step_size_h = float(es.timeincrement[0])
+
     buses = {}
     for name in spec.buses:
         buses[name] = solph.Bus(label=name)
@@ -168,7 +172,13 @@ def build_system(spec, cfg, timeindex=None):
         if ctype is None:
             raise ValueError("Component '{}' has no 'type'".format(name))
         created = build_component(
-            ctype, name, params, buses=buses, cfg=cfg, n_steps=n_steps
+            ctype,
+            name,
+            params,
+            buses=buses,
+            cfg=cfg,
+            n_steps=n_steps,
+            step_size_h=step_size_h,
         )
         es.add(*created)
         nodes[name] = created[0] if len(created) == 1 else created
