@@ -13,12 +13,17 @@ import pandas as pd
 import pyomo.environ as po
 import pytest
 from oemof import solph
+from oemof.network.network import Node
+from pyomo.core.base.block import ScalarBlock
 
 from tsib.optimization import (
     COMPONENT_FACTORIES,
     SystemSpec,
+    TsibBlock,
+    TsibComponent,
     annuity_factor,
     build_system,
+    factory,
     flow_series,
     node_results,
     objective_value,
@@ -110,6 +115,52 @@ def test_registry_covers_the_kit():
         "heat_pump", "battery", "thermal_storage", "zone5r1c",
     }
     assert expected <= set(COMPONENT_FACTORIES)
+
+
+def test_tsib_bases_are_complete_or_uninstantiable():
+    """The abstract methods are the half of a custom component that is easy
+    to forget: node without constraint_group, block without _create."""
+    class NodeWithoutGroup(TsibComponent):
+        pass
+
+    class BlockWithoutCreate(TsibBlock):
+        pass
+
+    with pytest.raises(TypeError, match="constraint_group"):
+        NodeWithoutGroup(label="zone")
+    with pytest.raises(TypeError, match="_create"):
+        BlockWithoutCreate()
+
+    class Block(TsibBlock):
+        def _create(self, group=None):
+            pass
+
+    assert hasattr(Block(), "CONSTRAINT_GROUP")
+
+
+def test_block_without_constraint_group_is_rejected():
+    """solph would skip such a block in silence, leaving the component with
+    no constraints at all - the builder has to catch it instead."""
+    class OrphanBlock(ScalarBlock):
+        def _create(self, group=None):
+            pass
+
+    class OrphanComponent(Node):
+        def constraint_group(self):
+            return OrphanBlock
+
+    @factory("orphan")
+    def _orphan(name, params, buses, cfg, n_steps, step_size_h):
+        return [OrphanComponent(label=name, inputs={buses[params["bus"]]: solph.Flow()})]
+
+    spec = SystemSpec()
+    spec.add_bus("elec")
+    spec.add_component("orphan", "orphan", bus="elec")
+    try:
+        with pytest.raises(TypeError, match="CONSTRAINT_GROUP"):
+            build_system(spec, simple_cfg())
+    finally:
+        COMPONENT_FACTORIES.pop("orphan")
 
 
 def test_unknown_component_type_lists_alternatives():

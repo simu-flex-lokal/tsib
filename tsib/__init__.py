@@ -13,6 +13,8 @@ from .optimization import (
     node_results,
     ThermalZoneConfig,
     ThermalZone5R1C,
+    TsibComponent,
+    TsibBlock,
     InvestmentOption,
     ContinuousInvestment,
     DiscreteOptionInvestment,

@@ -233,10 +233,18 @@ immediately, including profile references and investment parameters.
 
 Only when the physics is not expressible as flows between buses — free state variables, coupled
 algebraic nodes, bounds on something that is not a flow. The 5R1C zone is the only such case in
-tsib. The pattern:
+tsib.
+
+A custom component is always **two classes that have to find each other**: a node that hangs in
+the graph, and a block that holds the pyomo variables and constraints for *all* nodes of that
+type. `constraint_group()` is the link. Derive them from the bases in
+[`base.py`](../tsib/optimization/base.py) rather than from `Node`/`ScalarBlock` directly:
 
 ```python
-class MyComponent(Node):
+from tsib.optimization import TsibComponent, TsibBlock
+
+
+class MyComponent(TsibComponent):
     def __init__(self, label, bus, **params):
         super().__init__(label=label, inputs={bus: Flow()})
         ...
@@ -244,9 +252,7 @@ class MyComponent(Node):
         return MyComponentBlock
 
 
-class MyComponentBlock(ScalarBlock):
-    CONSTRAINT_GROUP = True          # <- REQUIRED, see Gotchas
-
+class MyComponentBlock(TsibBlock):
     def _create(self, group=None):
         if group is None:
             return
@@ -259,6 +265,12 @@ class MyComponentBlock(ScalarBlock):
         return sum(...)
 ```
 
+`TsibBlock` carries `CONSTRAINT_GROUP = True`, so the attribute solph looks for cannot be
+forgotten, and both bases declare their central method abstract — a node without
+`constraint_group()` or a block without `_create()` fails at instantiation instead of at solve
+time. If you bypass the bases anyway, `build_system` still refuses to return a system whose
+custom block would be ignored (`assert_constraint_groups`).
+
 Read the bus coupling as `m.flow[bus, node, t]` (into the node) or `m.flow[node, bus, t]` (out of
 it); do not create your own flow variables.
 
@@ -270,9 +282,12 @@ alongside `test/test_optimization_core.py`.
 ## 5. Gotchas
 
 - **`CONSTRAINT_GROUP = True` is mandatory on a custom block.** `solph.Model.__init__` collects
-  custom constraint groups with `if hasattr(i, "CONSTRAINT_GROUP")`. Without the attribute your
-  block is **silently ignored** — the model solves, the objective looks plausible, and your
-  component imposes no constraints whatsoever. This is the single nastiest failure mode here.
+  custom constraint groups with `if hasattr(i, "CONSTRAINT_GROUP")`, on top of the stock blocks
+  already listed in `Model.CONSTRAINT_GROUPS`. Without the attribute your block is **silently
+  ignored** — the model solves, the objective looks plausible, and your component imposes no
+  constraints whatsoever. This is the single nastiest failure mode here, which is why
+  `TsibBlock` carries the attribute and `build_system` rejects a block that lacks it. Note the
+  test is `hasattr`, not truth: `CONSTRAINT_GROUP = False` switches nothing off.
 - **`infer_last_interval=True` is mandatory.** solph 0.6 defaults it to `False`, which turns 8760
   time stamps into 8759 intervals and silently drops the last hour of the year. `build_system`
   sets it; if you construct an `EnergySystem` by hand, you must too.
@@ -301,6 +316,7 @@ alongside `test/test_optimization_core.py`.
 
 ```
 tsib/optimization/
+├── base.py         TsibComponent/TsibBlock bases for custom components
 ├── zone5r1c.py     ThermalZone5R1C + block, and zone_results()   <- the only custom physics
 ├── config.py       ThermalZoneConfig, calc_surface_irradiance
 ├── envelope.py     refurbishment/existing-construction catalog from the cost Excel

@@ -22,6 +22,7 @@ prices.
 """
 
 from . import presets
+from .base import TsibBlock, TsibComponent, assert_constraint_groups
 from .config import ThermalZoneConfig, calc_surface_irradiance
 from .control import ComfortControl
 from .envelope import ENVELOPE_ELEMENTS, load_control_options, load_envelope_options
@@ -48,6 +49,9 @@ __all__ = [
     "objective_value",
     "ThermalZone5R1C",
     "ThermalZone5R1CBlock",
+    "TsibComponent",
+    "TsibBlock",
+    "assert_constraint_groups",
     "ThermalZoneConfig",
     "zone_results",
     "calc_surface_irradiance",

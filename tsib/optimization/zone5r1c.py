@@ -29,17 +29,16 @@ import warnings
 import numpy as np
 import pandas as pd
 import pyomo.environ as po
-from oemof.network.network import Node
 from oemof.solph import Flow
-from pyomo.core.base.block import ScalarBlock
 
+from .base import TsibBlock, TsibComponent
 from .config import ThermalZoneConfig, calc_surface_irradiance
 from .control import ComfortControl
 from .envelope import ENVELOPE_ELEMENTS, load_envelope_options
 from .investment import DiscreteOptionInvestment
 
 
-class ThermalZone5R1C(Node):
+class ThermalZone5R1C(TsibComponent):
     """
     5R1C thermal zone (DIN EN ISO 13790 / Schuetz et al. 2017).
 
@@ -287,17 +286,10 @@ DESIGN_ADJUST = {
 DESIGN_T_INDOOR = 22.917
 
 
-class ThermalZone5R1CBlock(ScalarBlock):
+class ThermalZone5R1CBlock(TsibBlock):
     """
     Constraints of all ThermalZone5R1C nodes in an energy system.
-
-    `CONSTRAINT_GROUP` is what makes solph pick the block up automatically
-    (oemof.solph._models.Model.__init__ filters es.groups by that attribute);
-    without it the block is silently ignored and the zone would impose no
-    constraints at all.
     """
-
-    CONSTRAINT_GROUP = True
 
     def _create(self, group=None):
         if group is None:

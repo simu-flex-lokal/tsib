@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 from oemof import solph
 
+from .base import assert_constraint_groups
 from .registry import build_component
 
 #: Prefix marking a value which is resolved from the building configuration.
@@ -182,5 +183,7 @@ def build_system(spec, cfg, timeindex=None):
         )
         es.add(*created)
         nodes[name] = created[0] if len(created) == 1 else created
+
+    assert_constraint_groups(nodes)
 
     return es, nodes
