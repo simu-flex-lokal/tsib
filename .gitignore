@@ -22,3 +22,6 @@ dist
 # temporary office files
 ~$*.xls*
 *.xlk
+
+# local backlog / design ideas — not for GitHub
+backlog/
