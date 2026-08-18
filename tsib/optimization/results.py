@@ -69,9 +69,8 @@ def node_results(model, nodes, index=None):
     -------
     dict of component name -> result dict. The thermal zone keeps the shape
     the pre-migration model produced ("timeseries", "static",
-    "refurbishment", "max_load_violation"); every other component reports
-    its flows and, where applicable, its invested capacity and storage
-    content.
+    "max_load_violation"); every other component reports its flows and,
+    where applicable, its invested capacity and storage content.
     """
     results = {}
     for name, node in nodes.items():

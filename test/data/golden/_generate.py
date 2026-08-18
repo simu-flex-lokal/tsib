@@ -45,9 +45,9 @@ TIMESERIES_COLUMNS = ["Heating Load", "Cooling Load", "T_air", "T_s", "T_m", "T_
 
 def _solve(cfg):
     """Runs the pre-migration zone exactly as Building._get_heatload_profile
-    does: no refurbishment, no attached buses, heat priced internally."""
+    does: no attached buses, heat priced internally."""
     model = es.EnergySystemModel(cfg["weather"].index, wacc=cfg["WACC"])
-    zone = model.add(es.ThermalZone5R1C("thermalzone", cfg, refurbishment=False))
+    zone = model.add(es.ThermalZone5R1C("thermalzone", cfg))
     model.solve(tee=False)
     results = model.results("thermalzone")
     results["objective"] = model.objective_value

@@ -395,14 +395,6 @@ class Building(object):
 
         logging.info('Heat load profiles are simulated. '
         + 'This can take a few minutes.')
-        # get thermal load with the 5R1C zone in an energy system model
-        if self.cfg["refurbishment"]:
-            warnings.warn(
-                "For the simulation the refurbishment decisions"
-                + " are deactivated",
-                UserWarning,
-            )
-
         # compose and solve the energy system: a single thermal zone
         # supplied by priced heat/cool sources (pure heat load simulation)
         spec = tsib.optimization.presets.heat_load_only()

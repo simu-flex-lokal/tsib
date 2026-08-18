@@ -51,10 +51,7 @@ KWARG_TYPES = {
     "roofTilt": float,  # rooftile angle in degree
     "refurbished": bool,  # if the building is already refurbished
     "buildnew": bool,  # if the building gets completely new constructed
-    "onlyEnergyInvest": bool,  # if the cost of refurbishing the walls and the roof are only energy related
     "thermalClass": "NOT_IMPLEMENTED",  # ['very light', 'light', 'medium', 'heavy', 'very heavy'],
-    "refurbishment": bool,  # if refurbishment options (changing insulation or ventilation) shall be considered
-    "force_refurbishment": bool,  # if refurbishment must be selected
     "hotWaterElec": bool,  # if hot water is electrically provided
     "existingHeatSupply": [
         "Oil boiler",
@@ -90,9 +87,6 @@ KWARG_TYPES = {
     "seed": int,  # overrides the derived state_seed to allow independent stochastic realizations of the same building
     "mean_load": bool,  # if the fluctuative profile or the mean hourly profile should be taken
     "a_roof": "NOT_IMPLEMENTED",  # the total roof area
-    "windows_refurbished": "NOT_IMPLEMENTED",  # if the windows have allready been replaced
-    "walls_refurbished": "NOT_IMPLEMENTED",  # if the walls have already gotton an additional insulation
-    "roof_refurbished": "NOT_IMPLEMENTED",  # if the roof area has already gotton an additional insulation
     "costdata": str,  # file identifier with the related cost data
     "ventControl": bool, # if the ventilation system can be smart controlled
 }
@@ -102,10 +96,7 @@ KWARG_DEFAULTS = {
     "roofOrientation": 135.0,  # roof azimuth with 180 as south
     "refurbished": False,  # if the building is already refurbished
     "buildnew": False,  # if the building is newly constructed
-    "onlyEnergyInvest": False,  # if the cost of refurbishing the walls and the roof are only energy rlated
     "thermalClass": "medium",
-    "refurbishment": False,  # if refurbishment options (changing insulation) shall be considered
-    "force_refurbishment": False,  # if refurbishment must be selected
     "hotWaterElec": False,  # if hot water is electrically provided
     "existingHeatSupply": "Oil boiler",
     "buildingYear": 1990,  # construction year
@@ -623,19 +614,6 @@ class BuildingConfiguration(object):
         cfg["thermalClass"] = kwgs.pop("thermalClass")
         self.IDentries["thermalClass"] = cfg["thermalClass"]
 
-        # if refurbishment is an option for the optimization
-        cfg["refurbishment"] = kwgs.pop("refurbishment")
-        self.IDentries["refurbishment"] = cfg["refurbishment"]
-
-        # if refurbishment is a forced into the optimization
-        cfg["force_refurbishment"] = kwgs.pop("force_refurbishment")
-        if cfg["force_refurbishment"] and not cfg["refurbishment"]:
-            raise ValueError(
-                'If "force_refurbishment" is activated, "refurbishment" must be activated as well.'
-            )
-        # force_refurbishment to ID entries
-        self.IDentries['force_refurbishment'] = cfg['force_refurbishment']
-
         return cfg
 
     def _get_equipment(self, cfg, kwgs):
@@ -708,8 +686,6 @@ class BuildingConfiguration(object):
         Get the interest rate and the ownership structure of the building
         """
         cfg["ownership"] = kwgs.pop("ownership")
-
-        cfg["onlyEnergyInvest"] = kwgs.pop("onlyEnergyInvest")
 
         if "WACC" in kwgs:
             cfg["WACC"] = kwgs.pop("WACC")

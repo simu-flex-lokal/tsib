@@ -134,8 +134,8 @@ connection's import Source and export Sink are merged under the name `"grid"`:
 - `in_<bus>` / `out_<bus>` — flows [kW]
 - `capacity` — invested capacity, where an investment was declared
 - `storage_content` — SOC [kWh] for storages
-- the thermal zone instead reports `timeseries` / `static` / `refurbishment`, the shape the
-  pre-migration model produced, so `Building`'s CSV export and TinyDB cache are unaffected.
+- the thermal zone instead reports `timeseries` / `static`, the shape the pre-migration model
+  produced, so `Building`'s CSV export and TinyDB cache are unaffected.
 
 ---
 
@@ -169,12 +169,12 @@ $$\Phi^s_t = \Big(1 - \tfrac{U_{win}}{h_{ms} A_{tot}}\Big)\tfrac{Q_{ig,t}}{2}
 - \tfrac{\text{cross}_t}{h_{ms} A_{tot}} + Q_{sol,t} - \Phi^m_t$$
 
 **Envelope flows** are $H_e \cdot (T_m - T_e)$ with the heat transfer coefficient $H_e$ [kW/K] of
-the installed construction, read from the refurbishment catalog in `envelope.py`. That catalog is
-load-bearing even though refurbishment optimization is not available: it also carries the
-*existing* construction and the option-dependent solar gain series.
+the existing construction, derived from the building configuration's U-values and areas in
+`envelope.py`, which also supplies the window $U$ and $g_{gl}$ behind the solar gain series.
 
 **Comfort band** — this is the flexibility. $T_{air}$ is a free variable inside a band that the
-installed control equipment widens:
+installed control equipment widens ($x$ are the `capControl` / `occControl` / `nightReduction`
+configuration flags as 1/0 coefficients):
 
 $$T_{air,t} \le T_{lb} + (T_{ub} - T_{lb})\,x_{\text{smart}} - (T_{ub} - 30)\,\text{away}_t\,x_{\text{occ}}$$
 $$T_{air,t} \ge T_{lb} - (T_{lb} - 18)\,\text{asleep}_t\,x_{\text{night}} - (T_{lb} - 14)\,\text{away}_t\,x_{\text{occ}}$$
@@ -193,13 +193,6 @@ belongs to whatever supplies the bus.
 > ceiling forces fictitious cooling in buildings that have no cooling device. All are load-bearing
 > for the validated ~197 kWh/m²/a result. **Evidence and measured impact:
 > [`model-deviations.md`](model-deviations.md).**
-
-### Not available: refurbishment optimization
-
-Envelope and control *investment* decisions were not migrated. `refurbishment=True` raises
-`NotImplementedError` rather than being silently ignored. The Big-M machinery
-(`DiscreteOptionInvestment.switched_flow`, the window×solar linearization) still lives in
-`optimization/investment.py` for that follow-up.
 
 ---
 
@@ -314,7 +307,7 @@ alongside `test/test_optimization_core.py`.
 - **Degenerate optima are real.** With a lossless storage or a constant price, shifting energy is
   cost-neutral and the solver may return any of many optima. Tests that assert on a *trajectory*
   need a strictly convex setup (lossy storage, varying price); tests on aggregates do not.
-- **Solve time is dominated by binaries.** A fixed-envelope full year is an LP and solves in ~8 s.
+- **Solve time is dominated by binaries.** The zone itself is an LP; a full year solves in ~8 s.
 - **Set `$SOLVER=highs`** unless you have gurobi/cplex.
 - **"Maximal heat load exceeded" warnings are the soft constraint doing its job** — the design
   system is slightly undersized in some hours, exactly as in the old model.
@@ -326,9 +319,8 @@ tsib/optimization/
 ├── base.py         TsibComponent/TsibBlock bases for custom components
 ├── zone5r1c.py     ThermalZone5R1C + block, and zone_results()   <- the only custom physics
 ├── config.py       ThermalZoneConfig, calc_surface_irradiance
-├── envelope.py     refurbishment/existing-construction catalog from the cost Excel
-├── control.py      smart thermostat / occupancy / night reduction
-├── investment.py   annuity, Continuous/DiscreteOptionInvestment (Big-M kept for the port)
+├── envelope.py     heat transfer coefficients of the existing construction
+├── investment.py   annuity factor and continuous capacity investment
 ├── spec.py         SystemSpec, build_system, profile resolution
 ├── registry.py     component factories -> stock solph objects
 ├── presets.py      heat_load_only, hp_pv_battery

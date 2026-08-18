@@ -33,9 +33,7 @@ from oemof.solph import Flow
 
 from .base import TsibBlock, TsibComponent
 from .config import ThermalZoneConfig, calc_surface_irradiance
-from .control import ComfortControl
-from .envelope import ENVELOPE_ELEMENTS, load_envelope_options
-from .investment import DiscreteOptionInvestment
+from .envelope import ENVELOPE_ELEMENTS, existing_envelope
 
 
 class ThermalZone5R1C(TsibComponent):
@@ -65,8 +63,6 @@ class ThermalZone5R1C(TsibComponent):
     initial_T_m: float, optional (default: None)
         Initial thermal mass temperature [degC]. Replaces the periodic wrap
         of the mass node when given.
-    refurbishment: bool, optional (default: False)
-        Not supported yet, see `backlog/solph-refurbishment-port.md`.
     """
 
     def __init__(
@@ -78,18 +74,7 @@ class ThermalZone5R1C(TsibComponent):
         max_load=None,
         max_load_violation_penalty=100.0,
         initial_T_m=None,
-        refurbishment=False,
-        lifetime_default=40.0,
     ):
-        if refurbishment:
-            raise NotImplementedError(
-                "Envelope/control refurbishment decisions were not ported to "
-                "the solph implementation. The Big-M machinery "
-                "(DiscreteOptionInvestment.switched_flow) and the window x "
-                "solar linearization still live in tsib/optimization/"
-                "investment.py; see backlog/solph-refurbishment-port.md."
-            )
-
         inputs = {heat_bus: Flow()}
         if cool_bus is not None:
             inputs[cool_bus] = Flow()
@@ -110,27 +95,11 @@ class ThermalZone5R1C(TsibComponent):
                 "The unvalidated ventilation control path was not ported"
             )
 
-        # Envelope and control catalogs are needed even without refurbishment:
-        # they carry the heat transfer coefficients and the solar gain series
-        # of the *existing* construction, and the comfort band reads the
-        # (then constant) control selections.
-        self.envelope_options = load_envelope_options(
-            self.cfg, lifetime_default=lifetime_default
-        )
-        self.envelope_investments = {
-            element: DiscreteOptionInvestment(
-                element,
-                self.envelope_options[element],
-                fixed_option=next(iter(self.envelope_options[element])),
-            )
-            for element in ENVELOPE_ELEMENTS
-        }
-        self.control = ComfortControl(self.cfg, refurbishment=False)
+        self.envelope = existing_envelope(self.cfg)
 
         # filled in by the block on first build
         self._profiles = {}
         self._sol_profiles = {}
-        self._solar_index = []
         self._prepared = False
 
     # --- parameter preparation (framework independent) ------------------
@@ -170,66 +139,58 @@ class ThermalZone5R1C(TsibComponent):
         window_area_t = sum(cfg["A_Window_" + key] * F_r[key] for key in F_r)
         irrad_on_windows = irrad_surf.mul(pd.Series(window_area_s)).sum(axis=1).values
 
-        # solar gains per element and option, incl. the thermal radiation
-        # correction (Schuetz et al. 2017 - eq. 13)
-        self._sol_profiles = {element: {} for element in ["Windows", "Walls", "Roof"]}
-        for option in self.envelope_investments["Windows"].option_names:
-            data = self.envelope_options["Windows"][option]
-            thermal_rad = (
-                window_area_t
-                * const["h_r"]
-                * data["U"]
-                * const["R_se"]
-                * const["delta_T_sky"]
-            )
-            self._sol_profiles["Windows"][option] = (
-                irrad_on_windows * (1.0 - cfg["F_f"]) * cfg["F_w"] * data["g_gl"]
-                - thermal_rad
-            )
+        # solar gains per element, incl. the thermal radiation correction
+        # (Schuetz et al. 2017 - eq. 13)
+        win = self.envelope["Windows"]
+        thermal_rad = (
+            window_area_t
+            * const["h_r"]
+            * win["U"]
+            * const["R_se"]
+            * const["delta_T_sky"]
+        )
+        self._sol_profiles["Windows"] = (
+            irrad_on_windows * (1.0 - cfg["F_f"]) * cfg["F_w"] * win["g_gl"]
+            - thermal_rad
+        )
 
         mean_ver_irr = (
             irrad_surf.loc[:, ["North", "East", "South", "West"]].mean(axis=1).values
         )
-        for option in self.envelope_investments["Walls"].option_names:
-            H = self.envelope_options["Walls"][option]["H"]
-            thermal_rad = H * const["h_r"] * const["R_se"] * const["delta_T_sky"]
-            self._sol_profiles["Walls"][option] = (
-                mean_ver_irr * H * cfg["F_sh_vert"] * const["R_se"] * const["alpha"]
-                - thermal_rad
-            )
+        H = self.envelope["Walls"]["H"]
+        thermal_rad = H * const["h_r"] * const["R_se"] * const["delta_T_sky"]
+        self._sol_profiles["Walls"] = (
+            mean_ver_irr * H * cfg["F_sh_vert"] * const["R_se"] * const["alpha"]
+            - thermal_rad
+        )
 
         mean_roof_irr = irrad_surf.loc[:, ["Roof 1", "Roof 2"]].mean(axis=1).values
-        for option in self.envelope_investments["Roof"].option_names:
-            H = self.envelope_options["Roof"][option]["H"]
-            thermal_rad = H * const["h_r"] * const["R_se"] * const["delta_T_sky"]
-            self._sol_profiles["Roof"][option] = (
-                mean_roof_irr * H * cfg["F_sh_hor"] * const["R_se"] * const["alpha"]
-                - thermal_rad
-            )
-
-        self._solar_index = [
-            (element, option)
-            for element in ["Windows", "Walls", "Roof"]
-            for option in self.envelope_investments[element].option_names
-        ]
+        H = self.envelope["Roof"]["H"]
+        thermal_rad = H * const["h_r"] * const["R_se"] * const["delta_T_sky"]
+        self._sol_profiles["Roof"] = (
+            mean_roof_irr * H * cfg["F_sh_hor"] * const["R_se"] * const["alpha"]
+            - thermal_rad
+        )
 
         if self.max_load is None:
             self.max_load = self.config.calcDesignHeatLoad()
 
         self._prepared = True
 
-    # --- gain expressions (all scalars while investments are fixed) -----
+    # --- gain expressions (all scalars) ---------------------------------
+
+    def control(self, flag):
+        """Installed comfort control feature as 1./0. coefficient."""
+        return 1.0 if self.cfg[flag] else 0.0
 
     def H_element(self, element):
-        """Heat transfer coefficient [kW/K] of the installed option."""
-        inv = self.envelope_investments[element]
-        return self.envelope_options[element][inv.fixed_option]["H"]
+        """Heat transfer coefficient [kW/K] of the installed element."""
+        return self.envelope[element]["H"]
 
     def solar_sum(self, t):
         """Total solar gains through the installed envelope [kW]."""
         return sum(
-            self._sol_profiles[element][option][t]
-            for element, option in self._solar_index
+            self._sol_profiles[element][t] for element in SOLAR_ELEMENTS
         )
 
     def gain_mass_node(self, t):
@@ -245,13 +206,12 @@ class ThermalZone5R1C(TsibComponent):
         (Schuetz et al. 2017 - eq. 16)."""
         cfg = self.config
         const = cfg.CONST
-        win_inv = self.envelope_investments["Windows"]
-        win_data = self.envelope_options["Windows"][win_inv.fixed_option]
+        win_data = self.envelope["Windows"]
 
         u_win = win_data["U"]
         cross = sum(
-            win_data["H"] * self._sol_profiles[element][option][t]
-            for element, option in self._solar_index
+            win_data["H"] * self._sol_profiles[element][t]
+            for element in SOLAR_ELEMENTS
         )
         return (
             (1 - u_win / const["h_ms"] / cfg.A_tot) * (0.5 * self._profiles["Q_ig"][t])
@@ -263,16 +223,16 @@ class ThermalZone5R1C(TsibComponent):
     def design_heat_load_value(self):
         """Design heat load [kW] of the installed envelope."""
         H_total = self.config.H_door
-        for element, inv in self.envelope_investments.items():
-            H_total += (
-                self.envelope_options[element][inv.fixed_option]["H"]
-                * DESIGN_ADJUST[element]
-            )
+        for element in ENVELOPE_ELEMENTS:
+            H_total += self.envelope[element]["H"] * DESIGN_ADJUST[element]
         return H_total * (DESIGN_T_INDOOR - self.cfg["design_T_min"])
 
     def constraint_group(self):
         return ThermalZone5R1CBlock
 
+
+#: envelope elements the solar gains are distributed over
+SOLAR_ELEMENTS = ["Windows", "Walls", "Roof"]
 
 # design heat load adjustment factor per envelope element
 DESIGN_ADJUST = {
@@ -409,10 +369,10 @@ class ThermalZone5R1CBlock(TsibBlock):
             T_ub = zone.cfg["comfortT_ub"]
             return self.T_air[zone, t] <= (
                 T_lb
-                + (T_ub - T_lb) * zone.control.selection(None, "SmartThermostat")
+                + (T_ub - T_lb) * zone.control("capControl")
                 - (T_ub - 30.0)
                 * zone._profiles["occ_nothome"][t]
-                * zone.control.selection(None, "Occupancy")
+                * zone.control("occControl")
             )
 
         def comfort_lb(b, zone, t):
@@ -421,10 +381,10 @@ class ThermalZone5R1CBlock(TsibBlock):
                 T_lb
                 - (T_lb - 18.0)
                 * zone._profiles["occ_sleeping"][t]
-                * zone.control.selection(None, "NightReduction")
+                * zone.control("nightReduction")
                 - (T_lb - 14.0)
                 * zone._profiles["occ_nothome"][t]
-                * zone.control.selection(None, "Occupancy")
+                * zone.control("occControl")
             )
 
         self.comfort_ub = po.Constraint(self.ZONES, m.TIMESTEPS, rule=comfort_ub)
@@ -468,7 +428,7 @@ def zone_results(model, zone):
 
     Returns
     -------
-    dict with "timeseries", "static", "refurbishment", "max_load_violation"
+    dict with "timeseries", "static", "max_load_violation"
     """
     block = model.ThermalZone5R1CBlock
     steps = list(model.TIMESTEPS)
@@ -494,18 +454,6 @@ def zone_results(model, zone):
     timeseries["T_m"] = [po.value(block.T_m[zone, t]) for t in steps]
     timeseries["T_e"] = zone._profiles["T_e"]
 
-    # installed envelope/control state, in the shape of the former
-    # detailedRefurbish table
-    decisions = pd.DataFrame()
-    all_investments = dict(zone.envelope_investments)
-    for feature, inv in zone.control.investments.items():
-        all_investments["Control_" + feature] = inv
-    for label, inv in all_investments.items():
-        for option in inv.option_names:
-            selected = inv.selection_value(None, option)
-            decisions.loc["Capacity", (label, option)] = selected
-            decisions.loc["CAPEX", (label, option)] = inv.options[option]["capex"] * selected
-
     static = {
         "Capacity": zone.design_heat_load_value(),
         "FixCost": 0,
@@ -518,7 +466,6 @@ def zone_results(model, zone):
 
     return {
         "timeseries": timeseries,
-        "refurbishment": decisions,
         "static": static,
         "max_load_violation": violation,
     }

@@ -41,7 +41,6 @@ def example_building(ix=24, **kwargs):
         "ID": ID,
         "weatherData": try_data,
         "weatherID": "TRY_4",
-        "refurbishment": False,
         "nightReduction": False,
         "occControl": False,
         "capControl": True,

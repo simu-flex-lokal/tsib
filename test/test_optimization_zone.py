@@ -128,8 +128,8 @@ def test_parity_full_year_series():
 
 
 def test_zone_is_an_lp():
-    """Without refurbishment the zone creates no binary variables: the
-    heat load simulation stays a pure LP."""
+    """The zone creates no binary variables: the heat load simulation
+    stays a pure LP."""
     cfg = golden_zone_cfg(n_steps=168)
     es, nodes = build_system(presets.heat_load_only(), cfg)
     model, _ = solve(es)
@@ -146,14 +146,6 @@ def test_comfort_band_respected():
 
     assert T_air.max() <= cfg["comfortT_ub"] + 1e-4
     assert T_air.min() >= cfg["comfortT_lb"] - 1e-4
-
-
-def test_refurbishment_is_rejected():
-    """Refurbishment was not ported and must fail loudly rather than be
-    silently ignored."""
-    cfg = golden_zone_cfg(n_steps=48)
-    with pytest.raises(NotImplementedError, match="refurbishment"):
-        build_system(presets.heat_load_only(refurbishment=True), cfg)
 
 
 def test_heat_flows_through_the_bus():

@@ -35,7 +35,6 @@ def test_heatload():
             "ID": ID,
             "weatherData": try_data,
             "weatherID": "TRY_4",
-            "refurbishment": False,
             "nightReduction": False,
             "occControl": False,
             "capControl": True,

@@ -17,7 +17,6 @@ from .optimization import (
     TsibBlock,
     InvestmentOption,
     ContinuousInvestment,
-    DiscreteOptionInvestment,
     annuity_factor,
 )
 from .household.profiles import simSingleHousehold, simHouseholdsParallel, getHouseholdProfiles

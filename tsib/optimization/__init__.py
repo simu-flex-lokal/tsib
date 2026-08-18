@@ -24,11 +24,9 @@ prices.
 from . import presets
 from .base import TsibBlock, TsibComponent, assert_constraint_groups
 from .config import ThermalZoneConfig, calc_surface_irradiance
-from .control import ComfortControl
-from .envelope import ENVELOPE_ELEMENTS, load_control_options, load_envelope_options
+from .envelope import ENVELOPE_ELEMENTS, existing_envelope
 from .investment import (
     ContinuousInvestment,
-    DiscreteOptionInvestment,
     InvestmentOption,
     annuity_factor,
 )
@@ -58,13 +56,10 @@ __all__ = [
     "COMPONENT_FACTORIES",
     "build_component",
     "factory",
-    "ComfortControl",
     "ENVELOPE_ELEMENTS",
-    "load_envelope_options",
-    "load_control_options",
+    "existing_envelope",
     "InvestmentOption",
     "ContinuousInvestment",
-    "DiscreteOptionInvestment",
     "annuity_factor",
     "detect_solver",
     "manageSolverOpts",

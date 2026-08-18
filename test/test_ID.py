@@ -12,7 +12,6 @@ def test_get_ID():
     # parameterize a building
     bdgcfg = tsib.BuildingConfiguration(
         {
-            "refurbishment": False,
             "nightReduction": False,
             "occControl": False,
             "capControl": True,
