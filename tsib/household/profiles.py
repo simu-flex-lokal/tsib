@@ -21,7 +21,7 @@ from tsorb.ElectricalLoadProfile import ElectricalLoadProfile
 import tsib.data
 
 
-def simSingleHousehold(residents, year, **elp_kwargs):
+def simSingleHousehold(residents, year, seed=None, **elp_kwargs):
     """
     Function to build an Electrical Profile for the given number of residents
     in the given year and run it for exactly one household.
@@ -31,6 +31,10 @@ def simSingleHousehold(residents, year, **elp_kwargs):
             set the number of residents per household
         year: int, required
             set the calendar year the calculation will take place
+        seed: int, optional (default: None)
+            Seed of the random number generator. tsorb draws from the global
+            numpy generator, so without a seed the profile is a different
+            realization on every call.
         elp_kwargs: keyword arguments from parametrizing the 
             ElectricalLoadProfile class.
     ---------------------------------------------------------------------------
@@ -38,6 +42,8 @@ def simSingleHousehold(residents, year, **elp_kwargs):
         time_series as numpy array with the total electric energy consumption
         for one year with a minutewise resolution
     """
+    if seed is not None:
+        np.random.seed(seed)
     data_ex_main = DataExchangeCsv()
     elp = ElectricalLoadProfile(data_ex_main, residents, **elp_kwargs)
 
@@ -84,6 +90,7 @@ def simHouseholdsParallel(
     no_of_households,
     singleProfiles=False,
     cores=mp.cpu_count() - 1,
+    seeds=None,
     **elp_kwargs
 ):
     """
@@ -107,6 +114,9 @@ def simHouseholdsParallel(
             aggregated ones.
         cores: int, optional (default: CPU-Count -1)
             Number of cores/threads used for parallel profile generation.
+        seeds: list of int, optional (default: None)
+            One random seed per household, in the order the profiles are
+            returned. Defaults to consecutive seeds from a fixed master seed.
         elp_kwargs: keyword arguments from parametrizing the 
             ElectricalLoadProfile class.
     ---------------------------------------------------------------------------
@@ -128,7 +138,14 @@ def simHouseholdsParallel(
 
     masterseed = 7
     #    ws = [2]*no_of_households  # Test if workerseeds are all set the same all Households will be the same
-    ws = [masterseed + i for i in range(no_of_households)]
+    if seeds is None:
+        ws = [masterseed + i for i in range(no_of_households)]
+    else:
+        if len(seeds) != no_of_households:
+            raise ValueError(
+                "Got {} seeds for {} households".format(len(seeds), no_of_households)
+            )
+        ws = list(seeds)
 
     if last_loop_calcs > 0:
         no_loops = no_of_full_loops + 1
@@ -270,12 +287,14 @@ def getHouseholdProfiles(
             get_hot_water=True,
             resample_mean=mean_load,
             cores=cores,
+            seeds=[int(seed) for seed in not_existing_profiles],
         )
     # if single profile just create one profile and avoid multiprocessing
     elif len(not_existing_profiles) > 0:
         one_profile = simSingleHousehold(
             int(n_persons),
             2010,
+            seed=int(next(iter(not_existing_profiles))),
             weather_data=weather_data,
             get_hot_water=True,
             resample_mean=mean_load,
