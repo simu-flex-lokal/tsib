@@ -39,13 +39,13 @@ def test_scaleHeatDemand():
     bdgObj = tsib.Building(configurator=bdgcfg)
 
     # get the design heat load
-    origDesignLoad = bdgObj.thermalmodel.calcDesignHeatLoad()
+    origDesignLoad = bdgObj.zone_config.calcDesignHeatLoad()
 
     # scale to a reduced value
-    bdgObj.thermalmodel.scaleHeatLoad(scale=0.5)
+    bdgObj.zone_config.scaleHeatLoad(scale=0.5)
 
     # get updated load
-    reducedDesignLoad = bdgObj.thermalmodel.calcDesignHeatLoad()
+    reducedDesignLoad = bdgObj.zone_config.calcDesignHeatLoad()
 
     np.testing.assert_almost_equal(reducedDesignLoad/0.5, origDesignLoad, decimal=2)
 

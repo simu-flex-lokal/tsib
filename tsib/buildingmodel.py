@@ -55,7 +55,16 @@ class Building(object):
 
         self.IDentries = self.configurator.IDentries
 
-        self.thermalmodel = tsib.Building5R1C(self.cfg)
+        # thermal zone parameterization (design heat load etc.); the
+        # energy system itself is composed in _get_heatload_profile/optimize
+        self.zone_config = tsib.ThermalZoneConfig(self.cfg)
+
+        # last solved energy system and its solph model/nodes
+        self.energysystem = None
+        self.model = None
+        self.nodes = {}
+        self._detailed_results = pd.DataFrame(index=self.cfg["weather"].index)
+        self._static_results = {}
 
         # status if the profiles have already been initialized
         self._has_occupancy_profiles = False
@@ -152,7 +161,7 @@ class Building(object):
             self.timeseries.index = pd.to_datetime(
                 self.timeseries.index, utc=True
             )
-            self.thermalmodel.static_results = pd.read_csv(
+            self._static_results = pd.read_csv(
                 datapath2, index_col=0, header=None
             ).squeeze().to_dict()
             return True
@@ -384,38 +393,121 @@ class Building(object):
                     self.cfg
                 )
 
-        logging.info('Heat load profiles are simulated. ' 
+        logging.info('Heat load profiles are simulated. '
         + 'This can take a few minutes.')
-        # get thermal load with 5R1C model
+        # get thermal load with the 5R1C zone in an energy system model
         if self.cfg["refurbishment"]:
-            # save refurbishment satus
-            befRef = True
             warnings.warn(
                 "For the simulation the refurbishment decisions"
                 + " are deactivated",
                 UserWarning,
             )
-            self.cfg["refurbishment"] = False
-        else:
-            befRef = False
 
-        # run simulation
-        self.thermalmodel.sim5R1C(tee=False)
+        # compose and solve the energy system: a single thermal zone
+        # supplied by priced heat/cool sources (pure heat load simulation)
+        spec = tsib.optimization.presets.heat_load_only()
+        es, nodes = tsib.optimization.build_system(
+            spec, self.zone_config, timeindex=self.cfg["weather"].index
+        )
+        model, _ = tsib.optimization.solve(es, tee=False)
+        self.energysystem = es
+        self.model = model
 
-        # overwrite refurbishment options again
-        self.cfg["refurbishment"] = befRef
+        zone_results = tsib.optimization.zone_results(model, nodes["thermalzone"])
+        self._detailed_results = zone_results["timeseries"].copy()
+        self._detailed_results["Electricity Load"] = self.cfg["elecLoad"].values
+        self._static_results = zone_results["static"]
 
         self._has_heat_profiles = True
-        
-        # define relevant time series 
+
+        # define relevant time series
         self._heat_profile_names = ['Heating Load', 'Cooling Load']
 
         self.units.update({'Heating Load':'kW_{th}', 'Cooling Load':'kW_{th}', })
-    
+
         # append simulation (TODO improve this call)
-        self.timeseries = self.timeseries.join(self.thermalmodel.detailedResults[self._heat_profile_names])
+        self.timeseries = self.timeseries.join(self._detailed_results[self._heat_profile_names])
 
         return self.timeseries[self._heat_profile_names]
+
+
+    #: profile references the presets carry by default which
+    #: BuildingConfiguration does not produce, mapped onto the timeseries
+    #: column the renewable simulation already computes them as
+    _SUPPLIED_PROFILES = {"cop": "Heat pump", "pv_yield": "Photovoltaic 1"}
+
+    def _optimization_config(self):
+        """
+        The building configuration extended by the profiles that specs refer
+        to by name but that `BuildingConfiguration` does not itself produce.
+
+        Anything already present in the configuration wins, so a caller can
+        pass a dynamic tariff or a measured yield instead.
+        """
+        cfg = dict(self.cfg)
+        cfg.setdefault("elecPrice", tsib.optimization.presets.DEFAULT_ELEC_PRICE)
+
+        if any(key not in cfg for key in self._SUPPLIED_PROFILES):
+            self.getRenewables()
+            for key, column in self._SUPPLIED_PROFILES.items():
+                # a flat roof carries no PV profile
+                if column in self.timeseries:
+                    cfg.setdefault(key, self.timeseries[column].values)
+
+        return tsib.ThermalZoneConfig(cfg)
+
+
+    def optimize(self, spec, solver=None, tee=False, solverOpts=None):
+        """
+        Builds and solves an arbitrary energy system for this building.
+
+        This is the building block kit entry point: it pairs a system
+        description with the building's resolved configuration, so the same
+        spec can be applied to any parameterized building. Profile
+        references in the spec ("@elecLoad", "@cop", ...) are resolved
+        against this building's configuration.
+
+        Occupancy profiles are simulated first if they are not available
+        yet, since they drive the internal gains of the thermal zone.
+
+        Parameters
+        ----------
+        spec: SystemSpec or dict, required
+            e.g. from `tsib.optimization.presets`.
+        solver: str, optional (default: $SOLVER or auto-detected)
+        tee: bool, optional (default: False)
+            Stream the solver log.
+        solverOpts: dict, optional
+
+        Returns
+        -------
+        dict of component name -> results. The thermal zone reports
+        "timeseries"/"static"; every other component its flows and, where
+        invested, its capacity.
+
+        Examples
+        --------
+        >>> from tsib.optimization import presets
+        >>> results = bdg.optimize(presets.hp_pv_battery(pv_kwp=8.0))
+        >>> results["thermalzone"]["timeseries"]["Heating Load"].sum()
+        """
+        if not self._has_occupancy_profiles:
+            self._get_occupancy_profile(self.cfg)
+
+        es, nodes = tsib.optimization.build_system(
+            spec, self._optimization_config(), timeindex=self.cfg["weather"].index
+        )
+        model, _ = tsib.optimization.solve(
+            es, solver=solver, tee=tee, solverOpts=solverOpts
+        )
+        self.energysystem = es
+        self.model = model
+        self.nodes = nodes
+
+        return tsib.optimization.node_results(
+            model, nodes, index=self.cfg["weather"].index
+        )
+
 
     def getHeatingSystem(self):
         """
@@ -428,7 +520,7 @@ class Building(object):
         """
         logging.warning('Method to generate the nominal heat transfer coefficient of the heating system has not been validated."')
         # get design heat load
-        self.design_Q = self.thermalmodel.calcDesignHeatLoad()
+        self.design_Q = self.zone_config.calcDesignHeatLoad()
 
         # derive the heat transfer coefficient of the heating system kW/K
         self.design_H_heat = self.design_Q / (self.cfg['T_sup'] - 20.)
@@ -553,7 +645,7 @@ class Building(object):
             "static_results is deprecated, use timeseries instead",
                     DeprecationWarning
         )
-        return self.thermalmodel.static_results 
+        return self._static_results
 
     @property
     def detailedResults(self):
@@ -561,7 +653,7 @@ class Building(object):
             "detailedResults is deprecated, use timeseries instead",
                     DeprecationWarning
         )
-        return self.thermalmodel.detailedResults 
+        return self._detailed_results
 
     def sim5R1C(self):
         '''
