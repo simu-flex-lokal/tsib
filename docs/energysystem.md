@@ -333,6 +333,7 @@ tsib/optimization/
 ├── registry.py     component factories -> stock solph objects
 ├── presets.py      heat_load_only, hp_pv_battery
 ├── results.py      solve() and node_results()
+├── _profiles.py    profile lookup helpers shared by the components
 └── solverutils.py  solver detection and per-solver tuning
 ```
 

@@ -39,11 +39,12 @@ its extensions"* — and states only two comfort bounds of its own (Eqs. 3.1/3.2
 
 ## 1. Windows are driven by the mass node instead of the surface node
 
-**Likely bug. Unmeasured.** `optimization/zone5r1c.py:341` (driver), `:389` (use)
+**Likely bug. Unmeasured.** `optimization/zone5r1c.py`, `envelope_flow` (driver) and
+`surface_node_balance` (use)
 
-Every envelope element shares one driver, `driver = lambda b, t: b.T_m[t] - T_e[t]`, which is
-used by `envelope_flow` for all elements — including `Windows`. Eq. (21) couples windows to the
-**surface** node:
+Every envelope element shares one driver — `envelope_flow` returns
+`H_element(element) * (T_m[zone, t] - T_e[t])` for all elements, including `Windows`.
+Eq. (21) couples windows to the **surface** node:
 
 $$H_{tr,ms}(\theta_s - \theta_m) + H_{tr,is}(\theta_s - \theta_{air}) + \underbrace{H_{tr,w}(\theta_s - \theta_e)}_{\text{code uses } (T_m - T_e)} = \phi_{st}$$
 
@@ -54,12 +55,13 @@ $H_{tr,em} \approx H_{tr,op}$ approximation of Eq. (9). The mass node is correct
 closely. Driving a low-inertia, high-$U$ element from the slow node misplaces both phase and
 amplitude of the window losses.
 
-**To verify:** give `Windows` the driver `b.T_s[t] - T_e[t]`; re-run
+**To verify:** give `Windows` the driver `T_s[zone, t] - T_e[t]`; re-run
 `test_optimization_zone.py::test_heatload_reference` and the [K18] Fig. 3.8 IWU comparison.
 
 ## 2. Ventilation is driven by the mass node instead of the air node
 
-**Likely bug. Unmeasured.** `optimization/zone5r1c.py:341` (driver), `:402` (use)
+**Likely bug. Unmeasured.** `optimization/zone5r1c.py`, `envelope_flow` (driver) and
+`air_node_balance` (use)
 
 Same shared driver. Eq. (22) couples ventilation to the **air** node:
 
@@ -69,13 +71,13 @@ Physically the most clear-cut of the three: ventilation exchanges *air* with the
 its driving temperature difference is the air node's by definition. Eq. (12) defines
 $H_{ve} = \kappa_{air}\,\rho_{air}\,q_{ve,avg}$ — a pure air heat-capacity flow.
 
-**To verify:** as item 1, with driver `b.T_air[t] - T_e[t]`.
+**To verify:** as item 1, with driver `T_air[zone, t] - T_e[t]`.
 
 ## 3. The air node receives the surface gain instead of the internal gain
 
-**Likely bug. Unmeasured.** `optimization/zone5r1c.py:404`
+**Likely bug. Unmeasured.** `optimization/zone5r1c.py`, `air_node_balance`
 
-The air balance uses `self._gain_surface_node(b, t)` — that is $\phi_{st}$, the window/solar
+The air balance uses `zone.gain_surface_node(t)` — that is $\phi_{st}$, the window/solar
 weighted surface gain of Eq. (19). Per Eq. (22) the right-hand side is $\phi_{ia} + \phi_{HC}$,
 and Eq. (14) defines simply
 
@@ -94,8 +96,8 @@ are injected into the air node where the standard puts only half the internal ga
 
 ## 4. Fictitious cooling against a hard comfort ceiling
 
-**Deliberate in [K18], but a real modelling limitation.** `optimization/zone5r1c.py:308`
-(`Q_cool_internal`), `:415` (`comfort_ub`), `optimization/presets.py:19` (`DEFAULT_COOL_COST`)
+**Deliberate in [K18], but a real modelling limitation.** `optimization/zone5r1c.py`
+(`Q_cool_internal`, `comfort_ub`), `optimization/presets.py` (`DEFAULT_COOL_COST`)
 
 `comfort_ub` is a hard constraint and `Q_cool` is an unbounded non-negative variable priced at
 `DEFAULT_COOL_COST = 0.02 EUR/kWh`. Gains above the band therefore *force* cooling — including in
@@ -135,11 +137,11 @@ money — holds only under *constant* prices; with time-varying prices, pre-heat
 unbounded zone would be driven to 40 °C for arbitrage. Separating the two jobs exactly requires a
 disjunction and one binary per time step, which would destroy the full-year LP.
 
-→ **This item is written up in full, self-contained, for outside readers in
-[`open-problem-summer-overheating.md`](open-problem-summer-overheating.md)**: the physics, the
-proposed penalised-slack formulation, the missing window-opening model, the Kh/a comfort metrics
-(DIN 4108-2, EN 15251/16798-1), and five open research questions. Start there before touching
-this.
+→ **This item is written up in full, self-contained, for outside readers in the internal note
+`backlog/open-problem-summer-overheating.md`** (not part of the published documentation): the
+physics, the proposed penalised-slack formulation, the missing window-opening model, the Kh/a
+comfort metrics (DIN 4108-2, EN 15251/16798-1), and five open research questions. Start there
+before touching this.
 
 ---
 
