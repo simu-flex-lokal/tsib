@@ -111,11 +111,10 @@ rather than to the original authors.
 
 ## License
 
-MIT License
+MIT - see [`LICENSE`](LICENSE) for the full notice.
 
-Copyright (C) 2016-2022 Leander Kotzur (FZJ IEK-3), Timo Kannengießer (FZK-IEK-3), Kevin Knosala (FZJ IEK-3), Peter Stenzel (FZJ IEK-3), Peter Markewitz (FZJ IEK-3), Martin Robinius (FZJ IEK-3), Detlef Stolten (FZJ IEK-3)
+Copyright for the original work is held by Leander Kotzur, Timo Kannengießer, Kevin Knosala,
+Peter Stenzel, Peter Markewitz, Martin Robinius and Detlef Stolten (FZJ IEK-3); see
+[Origin and attribution](#origin-and-attribution).
 
 Modifications copyright (C) 2026 FH Aachen, Institute NOWUM Energy.
-
-You should have received a copy of the MIT License along with this program.
-If not, see https://opensource.org/licenses/MIT
