@@ -4,10 +4,12 @@ Solver handling for the energy system MILP: option management per solver
 and auto-detection of an available solver.
 """
 
+import logging
 import os
 
 import pyomo.opt as opt
 from pyomo.contrib import appsi
+from pyomo.contrib.appsi.base import TerminationCondition
 
 
 def manageSolverOpts(solver, solverOpts):
@@ -115,6 +117,78 @@ def detect_solver():
     )
 
 
+#: base HiGHS settings of the 5R1C models: the interior point method without
+#: crossover, on an unscaled problem
+HIGHS_OPTIONS = {
+    "solver": "ipm",
+    "simplex_scale_strategy": "off",
+    "run_crossover": "off",
+}
+
+#: settings tried in order until one terminates optimal, each merged into
+#: HIGHS_OPTIONS. The zone carries free temperature states, so the LP has
+#: primal values wide enough that HiGHS breaks on some inputs - IPX in its
+#: basis construction, simplex and crossover in postsolve ("excessive primal
+#: values"). Which inputs those are is not predictable, and the breakdown is
+#: not even reproducible for a fixed one, so the fallbacks buy robustness
+#: with runtime instead of touching the model formulation.
+HIGHS_FALLBACKS = (
+    {},
+    {"simplex_scale_strategy": "choose"},
+    {"presolve": "off"},
+    {"solver": "pdlp"},
+)
+
+
+def solve_highs(pyomo_model, tee=False, solverOpts=None):
+    """
+    Solves a pyomo model with HiGHS, retrying with more robust settings while
+    HiGHS reports anything but an optimal solution.
+
+    Parameters
+    ----------
+    pyomo_model: pyomo.ConcreteModel, required
+    tee: bool, optional (default: False)
+        Stream the solver log.
+    solverOpts: dict, optional
+        HiGHS options overriding `HIGHS_OPTIONS`. Given explicitly, they are
+        taken as deliberate and used without the fallbacks.
+
+    Returns
+    -------
+    The appsi results object, with the solution loaded into the model.
+    """
+    if solverOpts:
+        attempts = [dict(HIGHS_OPTIONS, **solverOpts)]
+    else:
+        attempts = [dict(HIGHS_OPTIONS, **fallback) for fallback in HIGHS_FALLBACKS]
+
+    failures = []
+    for options in attempts:
+        highs = appsi.solvers.Highs()
+        highs.config.stream_solver = tee
+        highs.config.load_solution = False
+        highs.highs_options = dict(options)
+        results = highs.solve(pyomo_model)
+        if results.termination_condition == TerminationCondition.optimal:
+            results.solution_loader.load_vars()
+            return results
+        failures.append((options, results.termination_condition))
+        if options is not attempts[-1]:
+            logging.warning(
+                "HiGHS terminated %s with %s, retrying with other settings.",
+                results.termination_condition,
+                options,
+            )
+
+    raise RuntimeError(
+        "HiGHS found no optimal solution. Settings tried:\n"
+        + "\n".join(
+            "  {} -> {}".format(options, condition) for options, condition in failures
+        )
+    )
+
+
 def solve_model(pyomo_model, solver=None, tee=False, solverOpts=None):
     """
     Solves a pyomo model with the given or an auto-detected solver.
@@ -143,19 +217,9 @@ def solve_model(pyomo_model, solver=None, tee=False, solverOpts=None):
     opts = manageSolverOpts(solver, dict(solverOpts) if solverOpts else {"Threads": 1, "LogFile": ""})
 
     if solver == "highs":
-        highs = appsi.solvers.Highs()
-        highs.config.stream_solver = tee
-        highs_options = {
-            "solver": "ipm",
-            "simplex_scale_strategy": "off",
-            "run_crossover": "off",
-        }
         # only explicitly passed options reach HiGHS (the generic
         # Threads/LogFile defaults are not valid HiGHS options)
-        if solverOpts:
-            highs_options.update(solverOpts)
-        highs.highs_options = highs_options
-        results = highs.solve(pyomo_model)
+        results = solve_highs(pyomo_model, tee=tee, solverOpts=solverOpts)
     else:
         optprob = opt.SolverFactory(solver)
         optprob.options = opts
