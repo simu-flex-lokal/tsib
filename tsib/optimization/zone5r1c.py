@@ -456,9 +456,9 @@ class ThermalZone5R1CBlock(TsibBlock):
 
 def zone_results(model, zone):
     """
-    Extracts the solved zone results in the shape the pre-migration
-    `EnergySystemModel.results("thermalzone")` produced, so that
-    Building/TinyDB result handling is unaffected by the migration.
+    Extracts the solved zone results in the shape `Building` and the TinyDB
+    result cache expect: a "timeseries" frame of loads and temperatures plus
+    a "static" dict of capacities and costs.
 
     Parameters
     ----------

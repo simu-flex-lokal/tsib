@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Solver handling for the energy system MILP: option management per solver
-and auto-detection of an available solver. Ported unchanged from
-tsib.thermal.utils.manageSolverOpts and Building5R1C.sim5R1C.
+and auto-detection of an available solver.
 """
 
 import os
