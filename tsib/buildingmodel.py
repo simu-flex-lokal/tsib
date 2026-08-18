@@ -431,6 +431,32 @@ class Building(object):
         return self.timeseries[self._heat_profile_names]
 
 
+    #: profile references the presets carry by default which
+    #: BuildingConfiguration does not produce, mapped onto the timeseries
+    #: column the renewable simulation already computes them as
+    _SUPPLIED_PROFILES = {"cop": "Heat pump", "pv_yield": "Photovoltaic 1"}
+
+    def _optimization_config(self):
+        """
+        The building configuration extended by the profiles that specs refer
+        to by name but that `BuildingConfiguration` does not itself produce.
+
+        Anything already present in the configuration wins, so a caller can
+        pass a dynamic tariff or a measured yield instead.
+        """
+        cfg = dict(self.cfg)
+        cfg.setdefault("elecPrice", tsib.optimization.presets.DEFAULT_ELEC_PRICE)
+
+        if any(key not in cfg for key in self._SUPPLIED_PROFILES):
+            self.getRenewables()
+            for key, column in self._SUPPLIED_PROFILES.items():
+                # a flat roof carries no PV profile
+                if column in self.timeseries:
+                    cfg.setdefault(key, self.timeseries[column].values)
+
+        return tsib.ThermalZoneConfig(cfg)
+
+
     def optimize(self, spec, solver=None, tee=False, solverOpts=None):
         """
         Builds and solves an arbitrary energy system for this building.
@@ -469,7 +495,7 @@ class Building(object):
             self._get_occupancy_profile(self.cfg)
 
         es, nodes = tsib.optimization.build_system(
-            spec, self.zone_config, timeindex=self.cfg["weather"].index
+            spec, self._optimization_config(), timeindex=self.cfg["weather"].index
         )
         model, _ = tsib.optimization.solve(
             es, solver=solver, tee=tee, solverOpts=solverOpts

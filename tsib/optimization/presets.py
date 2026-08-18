@@ -17,6 +17,10 @@ from .spec import SystemSpec
 DEFAULT_HEAT_COST = 0.08
 DEFAULT_COOL_COST = 0.02
 
+#: fallback electricity tariff [EUR/kWh] used by `Building.optimize` when the
+#: building configuration carries no `elecPrice` profile of its own
+DEFAULT_ELEC_PRICE = 0.35
+
 
 def heat_load_only(heat_cost=DEFAULT_HEAT_COST, cool_cost=DEFAULT_COOL_COST,
                    **zone_kwargs):

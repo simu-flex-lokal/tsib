@@ -22,7 +22,7 @@ from tsib.optimization import (
     solve,
 )
 
-from conftest import golden_zone_cfg
+from conftest import example_building, golden_zone_cfg
 
 
 def simple_cfg(n=48, **extra):
@@ -292,3 +292,26 @@ def test_zone_and_storage_in_one_solve():
     supply = results["heat_supply"]["out_heat"]
     assert supply.values[expensive].sum() / supply.sum() < 0.05
     assert results["buffer"]["in_heat"].sum() > 0, "the buffer is never used"
+
+
+def test_building_optimize_resolves_its_own_profiles():
+    """
+    `Building.optimize` is the documented one-liner entry point, so the
+    profile references the presets carry by default ("@elecPrice", "@cop",
+    "@pv_yield") have to resolve against a plain building - none of them is
+    produced by `BuildingConfiguration` itself.
+    """
+    bdg, _ = example_building(mean_load=True, seed=42)
+    results = bdg.optimize(presets.hp_pv_battery(pv_kwp=8.0, battery_kwh=10.0))
+
+    assert {"thermalzone", "grid", "hp", "pv", "battery"} <= set(results)
+    assert results["pv"]["out_elec"].sum() > 0
+    assert results["thermalzone"]["timeseries"]["Heating Load"].sum() > 0
+    # the heat pump is the only heat source, so it has to carry the zone
+    assert results["hp"]["out_heat"].sum() > 0
+
+    # a caller-supplied profile wins over the fallbacks
+    cfg = bdg._optimization_config()
+    assert cfg["elecPrice"] == presets.DEFAULT_ELEC_PRICE
+    bdg.cfg["elecPrice"] = np.full(len(cfg["weather"]), 0.11)
+    assert bdg._optimization_config()["elecPrice"][0] == 0.11

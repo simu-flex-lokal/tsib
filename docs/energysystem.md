@@ -87,6 +87,13 @@ configuration at build time. That boundary is deliberate: it keeps a spec small 
 diff and vary across thousands of buildings, and it is what makes `SystemSpec.to_json()` round-trip.
 Scalars pass through untouched, so `profile=1.0` is a valid constant 1 kW demand.
 
+Three of the keys the presets reference by default are not produced by `BuildingConfiguration`
+itself, so `Building.optimize` supplies them: `"@cop"` and `"@pv_yield"` from the renewable
+simulation it already runs (the heat pump COP and the specific PV yield in kW/kWp), and
+`"@elecPrice"` from `presets.DEFAULT_ELEC_PRICE`. Set any of them on `bdg.cfg` — a dynamic tariff,
+a measured yield — and yours is used instead. Calling `build_system` directly gives you no such
+fallbacks: put the profiles in the cfg dict yourself.
+
 ### The kit
 
 Every factory but the last returns stock solph objects:
