@@ -1,11 +1,11 @@
 [project]
 name = "tsib"
 version = "0.1.6"
-description = "Time Series Initialization for Buildings"
+description = "Time Series Initialization for Buildings - NOWUM Energy fork"
 readme = "README.md"
 license = "MIT"
 authors = [
-    { name = "Leander Kotzur", email = "l.kotzur@fz-juelich.de" },
+    { name = "Phillip Schlicht", email = "schlicht@fh-aachen.de" },
 ]
 requires-python = ">=3.12"
 keywords = [

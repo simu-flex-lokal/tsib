@@ -1,14 +1,19 @@
 [![Build Status](https://github.com/simu-flex-lokal/tsib/actions/workflows/test.yml/badge.svg)](https://github.com/simu-flex-lokal/tsib/actions/workflows/test.yml)
-[![Version](https://img.shields.io/pypi/v/tsib.svg)](https://pypi.python.org/pypi/tsib)
-
-<a href="https://www.fz-juelich.de/en/iek/iek-3"><img src="https://raw.githubusercontent.com/OfficialCodexplosive/README_Assets/862a93188b61ab4dd0eebde3ab5daad636e129d5/FJZ_IEK-3_logo.svg" alt="FZJ Logo" width="300px"></a>
 
 # tsib - Time Series Initialization for Buildings
 
 tsib is a python package that builds up on different databases and models for creating consistent demand and production time series of residential buildings. This could be either occupancy behavior, electricity demand or heat demand time series as well as photovoltaic (PV) and solar thermal production time series.
 
-
-If you want to use tsib in a published work, please [**cite following publication**](http://juser.fz-juelich.de/record/858675) which applies tsib for the creation of time series for residential buildings in Germany. 
+> **This is a fork.** It is maintained at FH Aachen, Institute NOWUM Energy,
+> and has diverged substantially from the original [FZJ IEK-3 tsib](https://github.com/FZJ-IEK3-VSA/tsib),
+> which was last updated in 2023. It is **not** the `tsib` package on PyPI — installing that
+> gives you the original project, which is different software. Install from this repository
+> (see [Installation](#installation)).
+>
+> What changed here: the package was modernized for Python 3.12-3.14 and current dependencies,
+> and the in-house MILP layer was replaced by an energy system optimization built on
+> [oemof-solph](https://github.com/oemof/oemof-solph). See [`docs/`](docs/) for the current
+> architecture, and [Origin and attribution](#origin-and-attribution) for credit and licensing.
 
 
 ## Features
@@ -32,32 +37,34 @@ tsib is a flexible tool which allows the use of different models and databases f
 
 
 ## Installation
-Directly install via pip as follows:
 
-	pip install tsib
-
-Alternatively, clone a local copy of the repository to your computer
+This fork is not published on a package index, so install it from source. Clone a local copy of
+the repository to your computer
 
 	git clone https://github.com/simu-flex-lokal/tsib.git
-	
-Then install tsib via pip as follow
+
+and install it with [uv](https://docs.astral.sh/uv/) (recommended - the repository ships a
+`uv.lock`)
 
 	cd tsib
-	pip install .
+	uv sync --extra highs
+
+or with pip
+
+	cd tsib
+	pip install '.[highs]'
 
 tsib requires Python 3.12 or newer.
 
 ### Solver
 
 The 5R1C thermal building model and every other energy system optimization are solved as a
-(MI)LP, so tsib needs a solver. The free, open-source default is HiGHS, which ships as an extra:
+(MI)LP, so tsib needs a solver. The free, open-source default is HiGHS, pulled in by the `highs`
+extra used above. Gurobi is available the same way (`--extra gurobi` / `'.[gurobi]'`), and
+separately installed cplex, scip or cbc installations are picked up as well.
 
-	pip install tsib[highs]
-
-Gurobi is available the same way (`pip install tsib[gurobi]`), and separately installed cplex,
-scip or cbc installations are picked up as well. Solvers are auto-detected in the order
-`gurobi, cplex, scip, cbc, highs` - commercial ones first, HiGHS last as the free fallback.
-Set the `$SOLVER` environment variable to force one explicitly:
+Solvers are auto-detected in the order `gurobi, cplex, scip, cbc, highs` - commercial ones first,
+HiGHS last as the free fallback. Set the `$SOLVER` environment variable to force one explicitly:
 
 	SOLVER=highs python your_script.py
 
@@ -67,6 +74,7 @@ Note that glpk is not supported for this model.
 
 	uv sync --group dev --extra highs
 	uv run pytest
+
 
 ## Examples
 
@@ -81,21 +89,33 @@ Further documentation lives in [`docs/`](docs/), in particular
 [`docs/energysystem.md`](docs/energysystem.md).
 
 
+## Origin and attribution
+
+tsib was created at the [Institute of Energy and Climate Research - Techno-economic Systems
+Analysis (IEK-3)](https://www.fz-juelich.de/en/iek/iek-3) of
+[Forschungszentrum Jülich](https://www.fz-juelich.de/en) by Leander Kotzur, Timo Kannengießer,
+Kevin Knosala, Peter Stenzel, Peter Markewitz, Martin Robinius and Detlef Stolten. The original
+project lives at [FZJ-IEK3-VSA/tsib](https://github.com/FZJ-IEK3-VSA/tsib).
+
+That original work was supported by the Helmholtz Association under the Joint Initiative
+["Energy System 2050 - A Contribution of the Research Field Energy"](https://www.helmholtz.de/en/research/energy/energy_system_2050/).
+
+If you use tsib in a published work, please [**cite the following publication**](http://juser.fz-juelich.de/record/858675),
+which applies the original tsib to the creation of time series for residential buildings in
+Germany.
+
+This fork is developed independently at FH Aachen, Institute NOWUM Energy. It is not endorsed by
+or affiliated with Forschungszentrum Jülich, and questions about it should go to this repository
+rather than to the original authors.
+
+
 ## License
 
 MIT License
 
 Copyright (C) 2016-2022 Leander Kotzur (FZJ IEK-3), Timo Kannengießer (FZK-IEK-3), Kevin Knosala (FZJ IEK-3), Peter Stenzel (FZJ IEK-3), Peter Markewitz (FZJ IEK-3), Martin Robinius (FZJ IEK-3), Detlef Stolten (FZJ IEK-3)
 
+Modifications copyright (C) 2026 FH Aachen, Institute NOWUM Energy.
+
 You should have received a copy of the MIT License along with this program.
 If not, see https://opensource.org/licenses/MIT
-
-## About Us
-<p align="center"><a href="https://www.fz-juelich.de/en/iek/iek-3"><img src="https://github.com/OfficialCodexplosive/README_Assets/blob/master/iek3-wide.png?raw=true" alt="Institut TSA"></a></p>
-We are the <a href="https://www.fz-juelich.de/en/iek/iek-3">Institute of Energy and Climate Research - Techno-economic Systems Analysis (IEK-3)</a> belonging to the <a href="https://www.fz-juelich.de/en">Forschungszentrum Jülich</a>. Our interdisciplinary department's research is focusing on energy-related process and systems analyses. Data searches and system simulations are used to determine energy and mass balances, as well as to evaluate performance, emissions and costs of energy systems. The results are used for performing comparative assessment studies between the various systems. Our current priorities include the development of energy strategies, in accordance with the German Federal Government’s greenhouse gas reduction targets, by designing new infrastructures for sustainable and secure energy supply chains and by conducting cost analysis studies for integrating new technologies into future energy market frameworks.
-
-## Acknowledgement
-
-This work was supported by the Helmholtz Association under the Joint Initiative ["Energy System 2050   A Contribution of the Research Field Energy"](https://www.helmholtz.de/en/research/energy/energy_system_2050/).
-
-<a href="https://www.helmholtz.de/en/"><img src="https://www.helmholtz.de/fileadmin/user_upload/05_aktuelles/Marke_Design/logos/HG_LOGO_S_ENG_RGB.jpg" alt="Helmholtz Logo" width="200px" style="float:right"></a>
