@@ -20,7 +20,13 @@ import numpy as np
 import pandas as pd
 from oemof import solph
 
-from tsib.optimization import SystemSpec, build_system, node_results, objective_value, solve
+from tsib.optimization import (
+    SystemSpec,
+    build_system,
+    node_results,
+    objective_value,
+    solve,
+)
 from tsib.optimization.registry import _bus, _capacity, factory
 
 
@@ -90,9 +96,14 @@ def main():
 
     # the new component, used exactly like any built-in one
     spec.add_component(
-        "chp", "chp",
-        bus_fuel="gas", bus_elec="elec", bus_heat="heat",
-        capacity=12.0, electrical_efficiency=0.35, thermal_efficiency=0.50,
+        name="chp",
+        type="chp",
+        bus_fuel="gas",
+        bus_elec="elec",
+        bus_heat="heat",
+        capacity=12.0,
+        electrical_efficiency=0.35,
+        thermal_efficiency=0.50,
     )
 
     es, nodes = build_system(spec, cfg)
@@ -114,12 +125,21 @@ def main():
     print()
     # the conversion factors hold by construction - solph derives both
     # outputs from the single fuel input
-    print("electricity == fuel * 0.35 : {:.6f} == {:.6f}".format(
-        power.sum(), fuel.sum() * 0.35))
-    print("heat        == fuel * 0.50 : {:.6f} == {:.6f}".format(
-        heat.sum(), fuel.sum() * 0.50))
-    print("heat covered by the CHP    : {:.1%}".format(
-        heat.sum() / (heat.sum() + backup.sum())))
+    print(
+        "electricity == fuel * 0.35 : {:.6f} == {:.6f}".format(
+            power.sum(), fuel.sum() * 0.35
+        )
+    )
+    print(
+        "heat        == fuel * 0.50 : {:.6f} == {:.6f}".format(
+            heat.sum(), fuel.sum() * 0.50
+        )
+    )
+    print(
+        "heat covered by the CHP    : {:.1%}".format(
+            heat.sum() / (heat.sum() + backup.sum())
+        )
+    )
 
 
 if __name__ == "__main__":
