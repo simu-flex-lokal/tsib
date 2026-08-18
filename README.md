@@ -1,4 +1,4 @@
-[![Build Status](https://img.shields.io/gitlab/pipeline/l-kotzur/tsib/master.svg)](https://gitlab.com/l-kotzur/tsib/pipelines)
+[![Build Status](https://github.com/simu-flex-lokal/tsib/actions/workflows/test.yml/badge.svg)](https://github.com/simu-flex-lokal/tsib/actions/workflows/test.yml)
 [![Version](https://img.shields.io/pypi/v/tsib.svg)](https://pypi.python.org/pypi/tsib)
 
 <a href="https://www.fz-juelich.de/en/iek/iek-3"><img src="https://raw.githubusercontent.com/OfficialCodexplosive/README_Assets/862a93188b61ab4dd0eebde3ab5daad636e129d5/FJZ_IEK-3_logo.svg" alt="FZJ Logo" width="300px"></a>
@@ -17,16 +17,18 @@ If you want to use tsib in a published work, please [**cite following publicatio
 * consideration of the occupancy behavior
 * derivation of the electric device load or the demand for thermal comfort
 * calculation of the heat load based on a thermal building model
+* optimization of the building energy system - dispatch, flexibility and investment sizing - solving the thermal zone jointly with storage, PV and price signals
 * provision of location specific time series for solar irradiation and temperature based on weather data
 
 
 ## Applied databases and models
-tsib is a flexible tool which allows the use of different models and databases for the generation of time series for buildings. In Version 0.1.0 the following databases and models are included is tsib:
+tsib is a flexible tool which allows the use of different models and databases for the generation of time series for buildings. The following databases and models are included in tsib:
 * [CREST](https://www.lboro.ac.uk/research/crest/demand-model/) demand model for the simulaton of the occupancy behavior
 * [5R1C](https://www.sciencedirect.com/science/article/abs/pii/S0306261916314933) thermal building model 
 * [pvlib](https://github.com/pvlib/pvlib-python) for solar irradiance calculation and photovoltaic simulation
 * [TABULA/EPISCOPE](http://episcope.eu/) archetype building catalogue
 * [DWD Testreferenzjahre](https://www.dwd.de/DE/leistungen/testreferenzjahre/testreferenzjahre.html)  for providing weather data
+* [oemof-solph](https://github.com/oemof/oemof-solph) as the optimization framework for the building energy system
 
 
 ## Installation
@@ -36,31 +38,47 @@ Directly install via pip as follows:
 
 Alternatively, clone a local copy of the repository to your computer
 
-	git clone https://github.com/FZJ-IEK3-VSA/tsib.git
+	git clone https://github.com/simu-flex-lokal/tsib.git
 	
 Then install tsib via pip as follow
-	
+
 	cd tsib
-	pip install . 
-	
-Or install directly via python as 
+	pip install .
 
-	python setup.py install
-	
-In order to use the 5R1C thermal building model, make sure that you have installed a MILP solver. As default solver coin-cbc is used which can either installed by
+tsib requires Python 3.12 or newer.
 
-	sudo apt-get install coinor-cbc
+### Solver
 
-or for Anaconda under windows as
+The 5R1C thermal building model and every other energy system optimization are solved as a
+(MI)LP, so tsib needs a solver. The free, open-source default is HiGHS, which ships as an extra:
 
-	conda install -c conda-forge coincbc
+	pip install tsib[highs]
 
-. Other solvers can be defined by defining the environment variable $SOLVER. 
+Gurobi is available the same way (`pip install tsib[gurobi]`), and separately installed cplex,
+scip or cbc installations are picked up as well. Solvers are auto-detected in the order
+`gurobi, cplex, scip, cbc, highs` - commercial ones first, HiGHS last as the free fallback.
+Set the `$SOLVER` environment variable to force one explicitly:
 
-	
+	SOLVER=highs python your_script.py
+
+Note that glpk is not supported for this model.
+
+### Development
+
+	uv sync --group dev --extra highs
+	uv run pytest
+
 ## Examples
 
-This [jupyter notebook](examples/showcase.ipynb) shows the capabilites of tsib to create all relevant time series. 
+This [jupyter notebook](examples/showcase.ipynb) shows the capabilites of tsib to create all relevant time series.
+
+For the energy system side, [`EnergySystemDemo.ipynb`](examples/energysystem/EnergySystemDemo.ipynb)
+walks through flexibility, PV and battery investment sizing, and a full-year whole-building
+workflow, while [`chp_component.py`](examples/energysystem/chp_component.py) shows how to add your
+own technology to the building block kit.
+
+Further documentation lives in [`docs/`](docs/), in particular
+[`docs/energysystem.md`](docs/energysystem.md).
 
 
 ## License
