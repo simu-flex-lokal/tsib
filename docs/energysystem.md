@@ -87,12 +87,67 @@ configuration at build time. That boundary is deliberate: it keeps a spec small 
 diff and vary across thousands of buildings, and it is what makes `SystemSpec.to_json()` round-trip.
 Scalars pass through untouched, so `profile=1.0` is a valid constant 1 kW demand.
 
+`required_inputs(spec)` returns exactly which keys a spec will look up, which makes that contract
+inspectable before anything is built:
+
+```python
+>>> required_inputs(presets.hp_pv_battery(pv_kwp=8.0))
+['cop', 'elecLoad', 'elecPrice', 'pv_yield']
+>>> required_inputs(presets.heat_load_only())
+[]
+```
+
 Three of the keys the presets reference by default are not produced by `BuildingConfiguration`
 itself, so `Building.optimize` supplies them: `"@cop"` and `"@pv_yield"` from the renewable
 simulation it already runs (the heat pump COP and the specific PV yield in kW/kWp), and
-`"@elecPrice"` from `presets.DEFAULT_ELEC_PRICE`. Set any of them on `bdg.cfg` — a dynamic tariff,
-a measured yield — and yours is used instead. Calling `build_system` directly gives you no such
-fallbacks: put the profiles in the cfg dict yourself.
+`"@elecPrice"` from `presets.DEFAULT_ELEC_PRICE`. It consults `required_inputs` first, so a spec
+that asks for neither renewable profile — `heat_load_only` — does not trigger the renewable
+simulation at all. Set any of them on `bdg.cfg` — a dynamic tariff, a measured yield — and yours
+is used instead. Calling `build_system` directly gives you no such fallbacks: put the profiles in
+the cfg dict yourself.
+
+### Parameterizing a building instead of wiring it
+
+A spec is the right unit for *designing* a system and the wrong unit for *describing a few
+hundred buildings*. `BuildingSystemParameters` is the layer above it: an equipment sheet saying
+what a building has, which `build_spec()` turns into a spec via the one template every tsib
+building shares.
+
+```python
+from tsib.optimization import BuildingSystemParameters, build_spec
+
+params = BuildingSystemParameters(
+    equipment={"heat_pump": {"capacity_kw": 8.0}, "pv": {"kwp": 8.0}},
+    tariff={"import": "@elecPrice"},
+    meta={"bus_id": "pylovo-42"},
+)
+results = bdg.optimize(build_spec(params))
+```
+
+That gives tsib three descriptions of a building, answering three different questions:
+
+| | question | where |
+|---|---|---|
+| `BuildingConfiguration` | what the building **is** | `buildingconfig.py` |
+| `BuildingSystemParameters` | what it **has** | `parameterization.py` |
+| `SystemSpec` | how it is **wired** | `spec.py` |
+
+The middle one is the exchange format when tsib is coupled to another energy system model.
+**Topology is deliberately not exchanged**: each engine keeps its own predefined building
+network, and only the equipment sheet plus the input time series cross the boundary. Two models
+otherwise have to agree on ports, buses and connection semantics they represent differently.
+
+Consequences worth knowing before extending it:
+
+- tsib's template puts **space heating and hot water on one `heat` bus**, served by one `buffer`.
+  They are not distinguishable by temperature level here. A model that separates them consumes
+  the same `hotWaterLoad` series and splits it itself.
+- A building with **no heat-supplying equipment** gets a priced non-electric `heat_supply` source
+  rather than an infeasible model. A gas-heated building still belongs in a grid study.
+- `meta` never reaches the model, in particular the grid connection point: two identical
+  archetypes at different grid nodes are the same building and share a cache entry.
+
+Full parameter reference: [`parameters.md` §9](parameters.md#9-the-equipment-sheet).
 
 ### The kit
 
@@ -321,9 +376,10 @@ tsib/optimization/
 ├── config.py       ThermalZoneConfig, calc_surface_irradiance
 ├── envelope.py     heat transfer coefficients of the existing construction
 ├── investment.py   annuity factor and continuous capacity investment
-├── spec.py         SystemSpec, build_system, profile resolution
+├── spec.py         SystemSpec, build_system, required_inputs, profile resolution
 ├── registry.py     component factories -> stock solph objects
-├── presets.py      heat_load_only, hp_pv_battery
+├── presets.py      heat_load_only, hp_pv_battery, capacity_params
+├── parameterization.py  BuildingSystemParameters + the building template
 ├── results.py      solve() and node_results()
 ├── _profiles.py    profile lookup helpers shared by the components
 └── solverutils.py  solver detection and per-solver tuning

@@ -21,7 +21,7 @@ prices.
     results = node_results(model, nodes)["thermalzone"]
 """
 
-from . import presets
+from . import parameterization, presets
 from .base import TsibBlock, TsibComponent, assert_constraint_groups
 from .config import ThermalZoneConfig, calc_surface_irradiance
 from .envelope import ENVELOPE_ELEMENTS, existing_envelope
@@ -33,14 +33,30 @@ from .investment import (
 from .registry import COMPONENT_FACTORIES, build_component, factory
 from .results import flow_series, node_results, objective_value, solve
 from .solverutils import detect_solver, manageSolverOpts
-from .spec import SystemSpec, build_system, resolve_profile
-from .zone5r1c import ThermalZone5R1C, ThermalZone5R1CBlock, zone_results
+from .parameterization import (
+    EQUIPMENT_BUILDERS,
+    BuildingSystemParameters,
+    build_spec,
+    equipment,
+)
+from .spec import SystemSpec, build_system, required_inputs, resolve_profile
+from .zone5r1c import (
+    ThermalZone5R1C,
+    ThermalZone5R1CBlock,
+    zone_results,
+)
 
 __all__ = [
     "presets",
+    "parameterization",
     "SystemSpec",
     "build_system",
     "resolve_profile",
+    "required_inputs",
+    "BuildingSystemParameters",
+    "build_spec",
+    "equipment",
+    "EQUIPMENT_BUILDERS",
     "solve",
     "node_results",
     "flow_series",

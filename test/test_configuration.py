@@ -53,14 +53,12 @@ def test_configuration_3():
         "longitude": 13.0,
         "comfortT_lb": 21.,
         "comfortT_ub": 24.,
-        "WACC": 0.03,
         "roofTilt": 45.0,
         "surrounding": "Semi",
         "n_apartments": 2,
         "a_ref_app": 100.,
         "n_persons": 2,
         "roofOrientation": 135.0,
-        "costdata": "default_2016",
         "capControl": True,
     }
 

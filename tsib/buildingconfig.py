@@ -17,15 +17,6 @@ import tsib
 import tsib.data
 
 
-HEAT_TECHS = [
-    "Oil boiler",
-    "Gas boiler",
-    "Heat pump",
-    "Pellet boiler",
-    "Electric heater",
-    "District heating",
-]
-
 KWARG_TYPES = {
     "country": ['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'ES', 'FR', 'GB', 'GR',
        'HU', 'IE', 'IT', 'NL', 'NO', 'PL', 'RS', 'SE', 'SI', 'XX'], # country code used for the choice of the building parameters
@@ -53,20 +44,8 @@ KWARG_TYPES = {
     "buildnew": bool,  # if the building gets completely new constructed
     "thermalClass": "NOT_IMPLEMENTED",  # ['very light', 'light', 'medium', 'heavy', 'very heavy'],
     "hotWaterElec": bool,  # if hot water is electrically provided
-    "existingHeatSupply": [
-        "Oil boiler",
-        "Gas boiler",
-        "Heat pump",
-        "Pellet boiler",
-        "Electric heater",
-        "CHP",
-        "District heating",
-    ],
-    "replaceHeatSupply": bool,  # if heat supply is at the end if the life time
     "T_sup": float,  # design supply temperature of the building
     "floorHeating": bool,  # if a floor heating is available --> set the supply temperature
-    "ownership": bool,  # if the occupant is also the owner
-    "WACC": float,  # interest rate - otherwise inherited from ownership
     "weatherData": pd.DataFrame,  # time series with the weather
     "weatherID": str,  # identifier of the chosen weather data
     "year": int,  # year for which it shall get optimized
@@ -81,13 +60,10 @@ KWARG_TYPES = {
     "elecLoad": pd.Series,  # electricity load profile of a single flat with correct time index
     "elecLoadID": str,  # identifier of the load
     "hasFirePlace": bool,  # if the building has a fire place
-    "hasSolarThermal": bool,  # if the building has solar thermal to provide hot water
-    "hasPhotovoltaic": bool,  # if the building has a photovoltaic panel
     "varyoccupancy": int,  # for how many occupancy profiles the building shall be optimized
     "seed": int,  # overrides the derived state_seed to allow independent stochastic realizations of the same building
     "mean_load": bool,  # if the fluctuative profile or the mean hourly profile should be taken
     "a_roof": "NOT_IMPLEMENTED",  # the total roof area
-    "costdata": str,  # file identifier with the related cost data
     "ventControl": bool, # if the ventilation system can be smart controlled
 }
 
@@ -98,12 +74,8 @@ KWARG_DEFAULTS = {
     "buildnew": False,  # if the building is newly constructed
     "thermalClass": "medium",
     "hotWaterElec": False,  # if hot water is electrically provided
-    "existingHeatSupply": "Oil boiler",
     "buildingYear": 1990,  # construction year
-    "replaceHeatSupply": True,  # if heat supply is at the end if the life time
-    "hasPhotovoltaic": False,  # if it exists already a photovoltaic panel
     "floorHeating": False,  # if a floor heating is available --> set the supply temperature
-    "ownership": True,  # if the occupant is also the owner
     "year": 2010,  # year for which it shall get optimized
     "longitude": 8.0,  # longitude in degree
     "latitude": 50.0,  # latitude in degree
@@ -115,7 +87,6 @@ KWARG_DEFAULTS = {
     "n_persons": 2,  # number of persons living in a single flat
     "varyoccupancy": 1,  # for how many occupancy profiles the building shall be optimized
     "mean_load": False,  # if the fluctuative profile or the mean hourly profile should be taken
-    "costdata": "default_2016",
     "ventControl": False, # if the ventilation system can be intelligently operated
 }
 
@@ -266,23 +237,6 @@ class BuildingConfiguration(object):
             cfg = self._get_operation(cfg, self.inputKwargs)
             if includeSupply:
                 cfg = self._get_equipment(cfg, self.inputKwargs)
-            cfg = self._get_finance(cfg, self.inputKwargs)
-
-            # check if cost data file exists
-            if not os.path.exists(
-                os.path.join(
-                    tsib.data.PATH, "costdata", self.inputKwargs["costdata"] + ".xlsx"
-                )
-            ):
-                raise ValueError(
-                    "'costdata' file with name '"
-                    + self.inputKwargs["costdata"]
-                    + "' does not exists"
-                )
-            # add cost data
-            cfg["costdata"] = self.inputKwargs.pop("costdata")
-            cfg["costdatapath"] = os.path.join(tsib.data.PATH, "costdata", self.cfg["costdata"] + ".xlsx")
-            self.IDentries["costdata"] = cfg["costdata"]
 
             # check if unused kwargs are left
             for remaining_kwg in self.inputKwargs:
@@ -626,37 +580,6 @@ class BuildingConfiguration(object):
         cfg["hotWaterElec"] = kwgs.pop("hotWaterElec")
         self.IDentries["hotWaterElec"] = cfg["hotWaterElec"]
 
-        # if hot water is generated electrically, correct the hot water demand (BDEW table)
-        if not self.ignore_profiles:
-            if cfg["hotWaterElec"]:
-                cfg["hotWaterLoad"] = cfg["hotWaterLoad"] * 0.6
-
-        # get existing heat supply
-        cfg["existingHeatSupply"] = kwgs.pop("existingHeatSupply")
-        self.IDentries["existingHeatSupply"] = cfg["existingHeatSupply"]
-
-        # TODO: replace heat supply with heat equipment age
-        cfg["replaceHeatSupply"] = kwgs.pop("replaceHeatSupply")
-        self.IDentries["replaceHeatSupply"] = cfg["replaceHeatSupply"]
-
-        # define if it has already solar thermal
-        if "hasSolarThermal" in kwgs:
-            cfg["hasSolarThermal"] = kwgs.pop("hasSolarThermal")
-        else:
-            # define solar thermal for all post enev 2009 gas boiler buildings
-            if cfg["existingHeatSupply"] == "Gas boiler" and (
-                cfg["buildingYear"] >= 2009
-            ):
-                cfg["hasSolarThermal"] = True
-
-            else:
-                cfg["hasSolarThermal"] = False
-        self.IDentries["hasSolarThermal"] = cfg["hasSolarThermal"]
-
-        # define if it has already photovoltaic
-        cfg["hasPhotovoltaic"] = kwgs.pop("hasPhotovoltaic")
-        self.IDentries["hasPhotovoltaic"] = cfg["hasPhotovoltaic"]
-
         # determine the design supply temperature depending on the size of the
         # building and the age
         if "T_sup" in kwgs:
@@ -679,24 +602,6 @@ class BuildingConfiguration(object):
         cfg["T_ret"] = T_sup - 20.
         self.IDentries["T_sup"] = cfg["T_sup"]
 
-        return cfg
-
-    def _get_finance(self, cfg, kwgs):
-        """
-        Get the interest rate and the ownership structure of the building
-        """
-        cfg["ownership"] = kwgs.pop("ownership")
-
-        if "WACC" in kwgs:
-            cfg["WACC"] = kwgs.pop("WACC")
-        else:
-            if cfg["ownership"]:
-                cfg["WACC"] = 0.03
-            else:
-                cfg["WACC"] = 0.06
-
-        self.IDentries["WACC"] = cfg["WACC"]
-        self.IDentries["ownership"] = cfg["ownership"]
         return cfg
 
 

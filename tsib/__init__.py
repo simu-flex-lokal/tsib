@@ -7,7 +7,12 @@ from .renewables.heatpump import simHeatpump
 from . import optimization
 from .optimization import (
     SystemSpec,
+    BuildingSystemParameters,
+    build_spec,
     build_system,
+    required_inputs,
+    equipment,
+    parameterization,
     presets,
     solve,
     node_results,

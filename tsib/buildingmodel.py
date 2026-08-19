@@ -307,6 +307,10 @@ class Building(object):
 
             # get hot water load
             bdg_profiles[i]["hotWaterLoad"] = occData["HotWater"] / 1000
+            if cfg["hotWaterElec"]:
+                # electrically heated hot water is metered lower than the
+                # tsorb draw-off profile suggests (BDEW table)
+                bdg_profiles[i]["hotWaterLoad"] *= 0.6
 
             # get fireplace profile
             if cfg["hasFirePlace"]:
@@ -428,21 +432,34 @@ class Building(object):
     #: column the renewable simulation already computes them as
     _SUPPLIED_PROFILES = {"cop": "Heat pump", "pv_yield": "Photovoltaic 1"}
 
-    def _optimization_config(self):
+    def _optimization_config(self, spec=None):
         """
         The building configuration extended by the profiles that specs refer
         to by name but that `BuildingConfiguration` does not itself produce.
 
         Anything already present in the configuration wins, so a caller can
         pass a dynamic tariff or a measured yield instead.
+
+        Parameters
+        ----------
+        spec: SystemSpec or dict, optional
+            Restricts the simulation to the profiles this spec actually
+            asks for - a pure heat load run must not pay for a PV
+            simulation it never reads. Without a spec every supported
+            profile is provided.
         """
         cfg = dict(self.cfg)
         cfg.setdefault("elecPrice", tsib.optimization.presets.DEFAULT_ELEC_PRICE)
 
-        if any(key not in cfg for key in self._SUPPLIED_PROFILES):
+        needed = set(self._SUPPLIED_PROFILES)
+        if spec is not None:
+            needed &= set(tsib.optimization.required_inputs(spec))
+
+        if any(key not in cfg for key in needed):
             self.getRenewables()
-            for key, column in self._SUPPLIED_PROFILES.items():
+            for key in needed:
                 # a flat roof carries no PV profile
+                column = self._SUPPLIED_PROFILES[key]
                 if column in self.timeseries:
                     cfg.setdefault(key, self.timeseries[column].values)
 
@@ -487,7 +504,8 @@ class Building(object):
             self._get_occupancy_profile(self.cfg)
 
         es, nodes = tsib.optimization.build_system(
-            spec, self._optimization_config(), timeindex=self.cfg["weather"].index
+            spec, self._optimization_config(spec),
+            timeindex=self.cfg["weather"].index
         )
         model, _ = tsib.optimization.solve(
             es, solver=solver, tee=tee, solverOpts=solverOpts

@@ -95,22 +95,22 @@ def hp_pv_battery(
 
     spec.add_component(
         "hp", "heat_pump", bus_in="elec", bus_out="heat", cop=cop, wacc=wacc,
-        **_capacity_params(hp_kw)
+        **capacity_params(hp_kw)
     )
     if pv_kwp is not None:
         spec.add_component(
             "pv", "pv", bus="elec", specific_yield=specific_yield, wacc=wacc,
-            **_capacity_params(pv_kwp)
+            **capacity_params(pv_kwp)
         )
     if battery_kwh is not None:
         spec.add_component(
             "battery", "battery", bus="elec", wacc=wacc,
-            **_capacity_params(battery_kwh)
+            **capacity_params(battery_kwh)
         )
     if buffer_kwh is not None:
         spec.add_component(
             "buffer", "thermal_storage", bus="heat", wacc=wacc,
-            **_capacity_params(buffer_kwh)
+            **capacity_params(buffer_kwh)
         )
 
     spec.add_component(
@@ -119,8 +119,13 @@ def hp_pv_battery(
     return spec
 
 
-def _capacity_params(value):
-    """A number becomes a fixed capacity, a dict an investment decision."""
+def capacity_params(value):
+    """
+    A number becomes a fixed capacity, a dict an investment decision.
+
+    Shared with the parameterization layer, which offers the same choice
+    per equipment entry.
+    """
     if isinstance(value, dict):
         return dict(value)
     return {"capacity": value}

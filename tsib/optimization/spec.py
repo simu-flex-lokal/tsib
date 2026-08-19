@@ -125,6 +125,34 @@ def resolve_profile(value, cfg, n_steps, name=""):
     return value
 
 
+def required_inputs(spec):
+    """
+    Configuration keys a spec will look up when it is built.
+
+    Every `"@key"` a component carries is resolved out of the building
+    configuration by `resolve_profile`, so this is the complete list of
+    what a caller has to provide - or has to have simulated - before
+    `build_system` can succeed.
+
+    Parameters
+    ----------
+    spec: SystemSpec or dict, required
+
+    Returns
+    -------
+    Sorted list of configuration keys, without the "@" prefix.
+    """
+    if isinstance(spec, dict):
+        spec = SystemSpec.from_dict(spec)
+
+    keys = set()
+    for params in spec.components.values():
+        for value in params.values():
+            if isinstance(value, str) and value.startswith(PROFILE_PREFIX):
+                keys.add(value[len(PROFILE_PREFIX):])
+    return sorted(keys)
+
+
 def build_system(spec, cfg, timeindex=None):
     """
     Builds a solph EnergySystem from a spec and a building configuration.

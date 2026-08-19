@@ -64,7 +64,8 @@ def zone_cfg_with_occupancy(ix=24, n_steps=None, **kwargs):
     cfg = dict(bdg.cfg)
     if n_steps is not None:
         cfg["weather"] = cfg["weather"].iloc[:n_steps]
-        for key in ["Q_ig", "occ_nothome", "occ_sleeping", "elecLoad"]:
+        for key in ["Q_ig", "occ_nothome", "occ_sleeping", "elecLoad",
+                    "hotWaterLoad"]:
             value = cfg[key]
             if isinstance(value, np.ndarray):
                 cfg[key] = value[:n_steps]
