@@ -43,6 +43,7 @@ from .spec import SystemSpec, build_system, required_inputs, resolve_profile
 from .zone5r1c import (
     ThermalZone5R1C,
     ThermalZone5R1CBlock,
+    comfort_bounds,
     zone_results,
 )
 
@@ -68,6 +69,7 @@ __all__ = [
     "assert_constraint_groups",
     "ThermalZoneConfig",
     "zone_results",
+    "comfort_bounds",
     "calc_surface_irradiance",
     "COMPONENT_FACTORIES",
     "build_component",

@@ -246,6 +246,63 @@ DESIGN_ADJUST = {
 DESIGN_T_INDOOR = 22.917
 
 
+def comfort_bounds(cfg, n_steps=None):
+    """
+    Effective comfort band per time step [degC].
+
+    `comfortT_lb` / `comfortT_ub` are only the nominal band. What the zone is
+    actually held to depends on which comfort controls are installed and on
+    where the occupants are: `capControl` releases the upper bound,
+    `nightReduction` lets the floor drop while they sleep, and `occControl`
+    widens both while nobody is home.
+
+    LIMITATION (deliberate, Kotzur 2018 - eq. 3.2): the upper bound is hard,
+    so gains above the band force cooling even in a building without any
+    cooling device. See docs/model-deviations.md item 4.
+
+    Parameters
+    ----------
+    cfg: dict or ThermalZoneConfig, required
+        Resolved building configuration.
+    n_steps: int, optional
+        Length of the returned arrays. Defaults to the weather index.
+
+    Returns
+    -------
+    (lower, upper) - two float arrays of length n_steps.
+    """
+    cfg = getattr(cfg, "cfg", cfg)
+    if n_steps is None:
+        n_steps = len(cfg["weather"].index)
+
+    def profile(key):
+        values = cfg.get(key)
+        if values is None:
+            return np.zeros(n_steps)
+        values = values.values if hasattr(values, "values") else np.asarray(values)
+        return np.asarray(values[:n_steps], dtype=float)
+
+    def control(flag):
+        return 1.0 if cfg[flag] else 0.0
+
+    T_lb = cfg["comfortT_lb"]
+    T_ub = cfg["comfortT_ub"]
+    nothome = profile("occ_nothome")
+    sleeping = profile("occ_sleeping")
+
+    upper = (
+        T_lb
+        + (T_ub - T_lb) * control("capControl")
+        - (T_ub - 30.0) * nothome * control("occControl")
+    )
+    lower = (
+        T_lb
+        - (T_lb - 18.0) * sleeping * control("nightReduction")
+        - (T_lb - 14.0) * nothome * control("occControl")
+    )
+    return lower, upper
+
+
 class ThermalZone5R1CBlock(TsibBlock):
     """
     Constraints of all ThermalZone5R1C nodes in an energy system.
@@ -358,34 +415,16 @@ class ThermalZone5R1CBlock(TsibBlock):
         )
 
         # --- comfort band ------------------------------------------------
-        # LIMITATION (deliberate, Kotzur 2018 - eq. 3.2): comfort_ub is a hard
-        # bound, so gains above the band force cooling even in a building
-        # without any cooling device. Schuetz et al. 2017 has no upper bound
-        # at all (eq. 26) and free-floats instead. See
-        # docs/model-deviations.md item 4 and
+        # Schuetz et al. 2017 has no upper bound at all (eq. 26) and
+        # free-floats instead; see comfort_bounds() and
         # backlog/open-problem-summer-overheating.md.
+        band = {zone: comfort_bounds(zone.cfg, n_steps) for zone in group}
+
         def comfort_ub(b, zone, t):
-            T_lb = zone.cfg["comfortT_lb"]
-            T_ub = zone.cfg["comfortT_ub"]
-            return self.T_air[zone, t] <= (
-                T_lb
-                + (T_ub - T_lb) * zone.control("capControl")
-                - (T_ub - 30.0)
-                * zone._profiles["occ_nothome"][t]
-                * zone.control("occControl")
-            )
+            return self.T_air[zone, t] <= band[zone][1][t]
 
         def comfort_lb(b, zone, t):
-            T_lb = zone.cfg["comfortT_lb"]
-            return self.T_air[zone, t] >= (
-                T_lb
-                - (T_lb - 18.0)
-                * zone._profiles["occ_sleeping"][t]
-                * zone.control("nightReduction")
-                - (T_lb - 14.0)
-                * zone._profiles["occ_nothome"][t]
-                * zone.control("occControl")
-            )
+            return self.T_air[zone, t] >= band[zone][0][t]
 
         self.comfort_ub = po.Constraint(self.ZONES, m.TIMESTEPS, rule=comfort_ub)
         self.comfort_lb = po.Constraint(self.ZONES, m.TIMESTEPS, rule=comfort_lb)

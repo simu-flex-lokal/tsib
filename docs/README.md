@@ -4,6 +4,7 @@
 |---|---|---|
 | [`energysystem.md`](energysystem.md) | Energy system optimization on oemof-solph: minimal example, the building block kit, the equipment sheet that parameterizes a building instead of wiring it, the 5R1C formulation, a tutorial on adding a component, and gotchas. | You are using or extending `tsib.optimization`. |
 | [`parameters.md`](parameters.md) | Every `BuildingConfiguration` kwarg and spec/preset parameter: type, default, how it is derived, and what it actually affects downstream. | You are parameterizing a building and want to know which knob does what — or why one you set had no effect. |
+| [`plotting.md`](plotting.md) | `tsib.plotting`: the functions, the four ways to look at a year (window, resample, heatmap, load duration), and the sign conventions. | You are plotting results or initialized profiles. |
 | [`model-deviations.md`](model-deviations.md) | Register of four known deviations of the 5R1C thermal zone from its source publications. All deliberately **unfixed** to preserve parity with the original model. | **Before changing any equation in `zone5r1c.py`**, or if a result looks physically wrong. |
 
 This index lists **user-facing documentation only** — reference material for people using or

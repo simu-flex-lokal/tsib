@@ -183,6 +183,10 @@ The year fraction is why a 72-hour design study still trades capex against opex 
 
 ### Results
 
+Plots of what comes back live in `tsib.plotting` - dispatch per bus, the zone against its
+comfort band, storage, grid exchange against the tariff, and the annual views a year needs
+(heatmap, load duration). See [`plotting.md`](plotting.md).
+
 `node_results(model, nodes)` returns one dict per *kit component*, not per solph node — a grid
 connection's import Source and export Sink are merged under the name `"grid"`:
 

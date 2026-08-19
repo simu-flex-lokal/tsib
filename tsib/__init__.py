@@ -5,6 +5,7 @@ from .renewables.fireplace import simFireplace
 from .renewables.solar import simPhotovoltaic, simSolarThermal
 from .renewables.heatpump import simHeatpump
 from . import optimization
+from . import plotting
 from .optimization import (
     SystemSpec,
     BuildingSystemParameters,
@@ -18,6 +19,7 @@ from .optimization import (
     node_results,
     ThermalZoneConfig,
     ThermalZone5R1C,
+    comfort_bounds,
     TsibComponent,
     TsibBlock,
     InvestmentOption,
