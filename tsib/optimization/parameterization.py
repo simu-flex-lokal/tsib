@@ -240,7 +240,7 @@ def _pv(name, params, spec):
 def _battery(name, params, spec):
     """Electrical storage behind the meter."""
     spec.add_component(
-        name, "battery", bus=ELEC_BUS,
+        name, "battery", bus_in=ELEC_BUS, bus_out=ELEC_BUS,
         **_storage_params(name, params, "capacity_kwh", "power_kw")
     )
 
@@ -256,7 +256,9 @@ def _buffer(name, params, spec):
     built = _storage_params(name, params, "capacity_kwh", "power_kw")
     if standby is not None:
         built["standby_loss_kW"] = standby
-    spec.add_component(name, "thermal_storage", bus=HEAT_BUS, **built)
+    spec.add_component(
+        name, "thermal_storage", bus_in=HEAT_BUS, bus_out=HEAT_BUS, **built
+    )
 
 
 def _storage_params(name, params, capacity_key, power_key):

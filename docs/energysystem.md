@@ -161,8 +161,8 @@ Every factory but the last returns stock solph objects:
 | `meter` | `Converter` between two buses | the §14a sub-metering primitive |
 | `pv` | `Source(Flow(maximum=yield, …))` | `curtailable=False` uses `fix=` instead |
 | `heat_pump` | `Converter(conversion_factors={bus_in: 1/COP})` | couples two carriers |
-| `battery` | `GenericStorage` | `balanced=True` ≙ periodic SOC wrap |
-| `thermal_storage` | `GenericStorage(fixed_losses_absolute=…)` | standby loss |
+| `battery` | `GenericStorage` | `bus_in`/`bus_out`; `balanced=True` ≙ periodic SOC wrap |
+| `thermal_storage` | `GenericStorage(fixed_losses_absolute=…)` | `bus_in`/`bus_out`; standby loss |
 | `zone5r1c` | **`ThermalZone5R1C`** | the one custom component |
 
 Capacities are either a number (fixed) or investment parameters:

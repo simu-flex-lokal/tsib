@@ -260,7 +260,8 @@ from tsib.optimization import equipment
 
 @equipment("ev_charger")
 def _ev_charger(name, params, spec):
-    spec.add_component(name, "battery", bus="elec", capacity=params["capacity_kwh"])
+    spec.add_component(name, "battery", bus_in="elec", bus_out="elec",
+                       capacity=params["capacity_kwh"])
 ```
 
 The exchange format, the template and the solver are all unchanged by this.

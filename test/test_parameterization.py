@@ -76,7 +76,7 @@ def test_new_equipment_needs_only_a_builder():
 
     @equipment("ev_charger")
     def _ev(name, params, spec):
-        spec.add_component(name, "battery", bus="elec",
+        spec.add_component(name, "battery", bus_in="elec", bus_out="elec",
                            capacity=params["capacity_kwh"])
 
     try:

@@ -272,7 +272,14 @@ def _thermal_storage(name, params, buses, cfg, n_steps, step_size_h):
 
 
 def _storage(name, params, buses, cfg, n_steps, step_size_h):
-    bus = _bus(buses, params, "bus", name)
+    """
+    Shared storage factory. Charging and discharging bus are given
+    separately, so a storage can bridge two buses (e.g. charge behind a
+    sub-meter and discharge in front of it). Both are mandatory, also when
+    they name the same bus.
+    """
+    bus_in = _bus(buses, params, "bus_in", name)
+    bus_out = _bus(buses, params, "bus_out", name)
     wacc = params.pop("wacc", 0.0)
     capacity = _capacity(params, n_steps * step_size_h, wacc)
     losses = _profile(params, "fixed_losses_absolute", cfg, n_steps, name, default=0.0)
@@ -285,9 +292,15 @@ def _storage(name, params, buses, cfg, n_steps, step_size_h):
         min_storage_level=params.pop("soc_min", 0.0),
         max_storage_level=params.pop("soc_max", 1.0),
         balanced=params.pop("balanced", True),
-        inputs={bus: solph.Flow(nominal_capacity=params.pop("charge_power_limit", None))},
+        inputs={
+            bus_in: solph.Flow(
+                nominal_capacity=params.pop("charge_power_limit", None)
+            )
+        },
         outputs={
-            bus: solph.Flow(nominal_capacity=params.pop("discharge_power_limit", None))
+            bus_out: solph.Flow(
+                nominal_capacity=params.pop("discharge_power_limit", None)
+            )
         },
     )
     initial = params.pop("initial_soc", None)

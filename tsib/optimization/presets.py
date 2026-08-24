@@ -104,12 +104,12 @@ def hp_pv_battery(
         )
     if battery_kwh is not None:
         spec.add_component(
-            "battery", "battery", bus="elec", wacc=wacc,
+            "battery", "battery", bus_in="elec", bus_out="elec", wacc=wacc,
             **capacity_params(battery_kwh)
         )
     if buffer_kwh is not None:
         spec.add_component(
-            "buffer", "thermal_storage", bus="heat", wacc=wacc,
+            "buffer", "thermal_storage", bus_in="heat", bus_out="heat", wacc=wacc,
             **capacity_params(buffer_kwh)
         )
 
