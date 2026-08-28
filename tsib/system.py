@@ -8,33 +8,118 @@ different questions:
 ===================================  ==================================
 `BuildingConfiguration`              what is *true* of the building
 `BuildingSystemParameters` (here)    what the building *has*
-`SystemSpec`                         how it is *wired*
+the spec (`build_spec`)              how it is *wired*
 ===================================  ==================================
 
 The middle one is the exchange format. Topology is never exchanged: every
 engine keeps its own predefined building network and only the equipment
 sheet plus the input time series travel between them. That is what makes a
-tsib building parameterizable at grid scale - hand-authoring a `SystemSpec`
-per building does not survive a few hundred of them - and what keeps the
+tsib building parameterizable at grid scale - hand-authoring a spec per
+building does not survive a few hundred of them - and what keeps the
 description meaningful to a partner model whose components and connections
-look nothing like solph's.
+look nothing like the one tsib assumes.
+
+The spec is a plain dictionary and nothing here solves anything: tsib
+states what the building is made of and hands over the time series, the
+energy system model lives elsewhere.
 
     params = BuildingSystemParameters(
         equipment={"heat_pump": {"capacity_kw": 8.0}, "pv": {"kwp": 8.0}},
         tariff={"import": "@elecPrice", "export": 0.08},
     )
-    results = bdg.optimize(build_spec(params))
+    spec = build_spec(params, bdg.zone_parameters())
+    inputs = bdg.system_inputs(spec)
 
 New equipment is added by registering one `@equipment` builder; neither the
-exchange format, the template, nor the solver knows it happened.
+exchange format nor the template knows it happened.
 """
 
 import copy
 import json
 
-from . import presets
-from .presets import capacity_params
-from .spec import SystemSpec, required_inputs
+from .envelope.gains import ZONE_SERIES
+
+#: version of the spec schema emitted by `build_spec`
+SPEC_VERSION = "1"
+
+#: default energy prices [EUR/kWh] carried over from the 5R1C heat load run
+DEFAULT_HEAT_COST = 0.08
+DEFAULT_COOL_COST = 0.02
+
+#: fallback electricity tariff [EUR/kWh] when the building configuration
+#: carries no `elecPrice` profile of its own
+DEFAULT_ELEC_PRICE = 0.35
+
+# ---------------------------------------------------------------------
+# the spec: plain data, no framework
+# ---------------------------------------------------------------------
+
+
+class SpecBuilder(object):
+    """
+    Collects buses and components into the spec dictionary.
+
+    Only `build_spec` uses this; it exists so the equipment builders can be
+    written as `spec.add_component(...)` instead of assembling nested dicts
+    by hand. The product is a plain dict - topology plus scalars, never a
+    time series - which any energy system model can read.
+    """
+
+    def __init__(self):
+        self.buses = {}
+        self.components = {}
+
+    def add_bus(self, name, carrier=None):
+        self.buses[name] = {"carrier": carrier}
+
+    def add_component(self, name, ctype, **params):
+        if name in self.components:
+            raise ValueError("Duplicate component '{}'".format(name))
+        self.components[name] = dict(params, type=ctype)
+
+    def to_dict(self):
+        return {
+            "version": SPEC_VERSION,
+            "buses": copy.deepcopy(self.buses),
+            "components": copy.deepcopy(self.components),
+        }
+
+
+def capacity_params(value):
+    """
+    A number becomes a fixed capacity, a dict an investment decision.
+
+    The same choice is offered per equipment entry of the sheet.
+    """
+    if isinstance(value, dict):
+        return dict(value)
+    return {"capacity": value}
+
+
+def required_inputs(spec):
+    """
+    The input keys a spec refers to, i.e. its data contract.
+
+    Any parameter given as a string starting with "@" is a named reference
+    to a time series which travels separately from the spec; this collects
+    them so a caller knows what has to be supplied.
+
+    Parameters
+    ----------
+    spec: dict, required
+        As returned by `build_spec`.
+
+    Returns
+    -------
+    sorted list of keys, without the "@".
+    """
+    keys = set()
+    for params in spec.get("components", {}).values():
+        for value in params.values():
+            if isinstance(value, str) and value.startswith("@"):
+                keys.add(value[1:])
+    return sorted(keys)
+
 
 #: buses of the template. One heat bus carries both space heating and hot
 #: water: a deliberate simplification, so the two are not distinguishable by
@@ -89,8 +174,9 @@ class BuildingSystemParameters(object):
         the building is not electrically heated. Each is a number or a
         "@key" reference, like any other spec value.
     zone: dict, optional
-        Passed to `ThermalZone5R1C` (max_load, initial_T_m). The zone's
-        physics and comfort band still come from the building configuration.
+        Overrides of the zone parameters (max_load, initial_T_m). The
+        zone's physics and comfort band come from the building
+        configuration, via `tsib.envelope.zone_parameters`.
     meta: dict, optional
         Descriptive only, never built and never part of the building's
         cache key: the grid connection point ("bus_id"), the intended time
@@ -142,11 +228,11 @@ class BuildingSystemParameters(object):
 
     # --- convenience ---------------------------------------------------
 
-    def build_spec(self):
-        return build_spec(self)
+    def build_spec(self, zone_params=None):
+        return build_spec(self, zone_params)
 
     def required_inputs(self):
-        """Configuration keys this building's system will demand."""
+        """Input keys this building's system will demand."""
         return required_inputs(build_spec(self))
 
     def check_index(self, index):
@@ -300,7 +386,7 @@ def _storage_params(name, params, capacity_key, power_key):
 # ---------------------------------------------------------------------
 
 
-def build_spec(params):
+def build_spec(params, zone_params=None):
     """
     Composes the tsib building template for one equipment sheet.
 
@@ -318,15 +404,21 @@ def build_spec(params):
     Parameters
     ----------
     params: BuildingSystemParameters or dict, required
+    zone_params: dict, optional
+        The building's 5R1C parameters, i.e. `tsib.envelope.zone_parameters`
+        or `Building.zone_parameters()`. Without them the zone component
+        names its inputs but carries no physics: such a spec is complete
+        enough to ask what it needs (`required_inputs`), not to be built.
 
     Returns
     -------
-    SystemSpec
+    dict - the spec: version, buses, components. Plain data throughout, so
+    it can be stored as JSON and handed to an energy system model.
     """
     if not isinstance(params, BuildingSystemParameters):
         params = BuildingSystemParameters.from_dict(params)
 
-    spec = SystemSpec()
+    spec = SpecBuilder()
     spec.add_bus(ELEC_BUS, carrier="electricity")
     spec.add_bus(HEAT_BUS, carrier="heat")
     spec.add_bus(COOL_BUS, carrier="cool")
@@ -345,7 +437,7 @@ def build_spec(params):
     # the comfort ceiling is a hard bound, so the zone always needs a way to
     # shed heat - see deviation 4 in docs/model-deviations.md
     spec.add_component("cool_supply", "source", bus=COOL_BUS,
-                       price=presets.DEFAULT_COOL_COST)
+                       price=DEFAULT_COOL_COST)
 
     electrically_heated = False
     for name in sorted(params.equipment):
@@ -359,9 +451,17 @@ def build_spec(params):
         # heat comes from outside the electricity system
         spec.add_component(
             "heat_supply", "source", bus=HEAT_BUS,
-            price=params.tariff.get("heat", presets.DEFAULT_HEAT_COST)
+            price=params.tariff.get("heat", DEFAULT_HEAT_COST)
         )
 
-    spec.add_component("thermalzone", "zone5r1c", heat_bus=HEAT_BUS,
-                       cool_bus=COOL_BUS, **params.zone)
-    return spec
+    # the zone's ten scalars are written into the spec, its five time
+    # series are referenced by name like every other profile
+    zone = {"heat_bus": HEAT_BUS, "cool_bus": COOL_BUS}
+    zone.update({key: "@" + key for key in ZONE_SERIES})
+    if zone_params is not None:
+        zone.update({key: value for key, value in zone_params.items()
+                     if key not in ZONE_SERIES})
+    zone.update(params.zone)
+    spec.add_component("thermalzone", "zone5r1c", **zone)
+
+    return spec.to_dict()

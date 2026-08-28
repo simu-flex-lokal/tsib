@@ -11,8 +11,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
-    env:
-      SOLVER: highs
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +20,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --group dev --extra highs
+        run: uv sync --group dev
 
       - name: Run tests
         run: uv run pytest --cov=tsib test/

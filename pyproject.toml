@@ -12,7 +12,7 @@ keywords = [
     "buildings",
     "thermal load",
     "electricity load",
-    "optimization",
+    "time series",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -29,26 +29,16 @@ classifiers = [
 dependencies = [
     "pvlib",
     "pandas",
-    "Pyomo",
     "numpy",
     "matplotlib",
     "xlrd",
     "tsorb",
     "tinydb",
     "openpyxl",
-    "oemof-solph>=0.6.4",
 ]
 
 [project.urls]
 Homepage = "https://github.com/simu-flex-lokal/tsib"
-
-[project.optional-dependencies]
-gurobi = [
-    "gurobipy>=13.0.2",
-]
-highs = [
-    "highspy",
-]
 
 [dependency-groups]
 dev = ["pytest", "pytest-cov"]

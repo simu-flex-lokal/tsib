@@ -25,3 +25,7 @@ dist
 
 # local backlog / design ideas — not for GitHub
 backlog/
+
+# output of examples/buildingsystem/system_export_demo.py
+examples/buildingsystem/system_spec.json
+examples/buildingsystem/system_inputs.csv

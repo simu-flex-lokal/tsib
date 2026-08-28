@@ -55,14 +55,9 @@ class Building(object):
 
         self.IDentries = self.configurator.IDentries
 
-        # thermal zone parameterization (design heat load etc.); the
-        # energy system itself is composed in _get_heatload_profile/optimize
+        # thermal zone parameterization (design heat load etc.)
         self.zone_config = tsib.ThermalZoneConfig(self.cfg)
 
-        # last solved energy system and its solph model/nodes
-        self.energysystem = None
-        self.model = None
-        self.nodes = {}
         self._detailed_results = pd.DataFrame(index=self.cfg["weather"].index)
         self._static_results = {}
 
@@ -389,134 +384,142 @@ class Building(object):
 
     def _get_heatload_profile(self):
         '''
-        Simulates the heat load based on a 5R1C model
+        Simulates the heat load of the building.
+
+        NOT IMPLEMENTED. The 5R1C heat load used to be a MILP solve, which
+        left with the energy system model; the forward simulation of the
+        same zone which replaces it does not exist yet. Everything it needs
+        is in place - `tsib.envelope.zone_parameters(self.cfg)` returns the
+        complete parameterization, solver free.
+
+        What the replacement has to produce, i.e. what the rest of this
+        class and the result cache expect:
+
+        * `self._detailed_results`: a frame on the weather index with
+          "Heating Load" and "Cooling Load" [kW] and the node temperatures
+          "T_air", "T_s", "T_m", "T_e" [degC], plus "Electricity Load".
+        * `self._static_results`: at least "Capacity" [kW], the design heat
+          load, alongside the zero cost entries.
+        * `self.timeseries`: joined with the two load columns.
+        * `self._heat_profile_names` = ['Heating Load', 'Cooling Load'],
+          `self.units` for both, and `self._has_heat_profiles = True`.
+
+        The air temperature has to stay inside the comfort band of
+        `tsib.envelope.comfort_bounds(self.cfg)` and the load below
+        `zone_parameters()["max_load"]`. Parity target for the result:
+        test/data/golden/zone_year.csv.gz and zone_year_aggregates.json.
         '''
-       # occupancy profiles are required for thermal load determination
-        if not self._has_occupancy_profiles:
-            self._get_occupancy_profile(
-                    self.cfg
-                )
-
-        logging.info('Heat load profiles are simulated. '
-        + 'This can take a few minutes.')
-        # compose and solve the energy system: a single thermal zone
-        # supplied by priced heat/cool sources (pure heat load simulation)
-        spec = tsib.optimization.presets.heat_load_only()
-        es, nodes = tsib.optimization.build_system(
-            spec, self.zone_config, timeindex=self.cfg["weather"].index
+        raise NotImplementedError(
+            "The 5R1C heat load is not available: it used to be a MILP "
+            "solve, and the solver-free forward model which replaces it is "
+            "not implemented yet. See backlog/20260820_esmkit-split.md."
         )
-        model, _ = tsib.optimization.solve(es, tee=False)
-        self.energysystem = es
-        self.model = model
-
-        zone_results = tsib.optimization.zone_results(model, nodes["thermalzone"])
-        self._detailed_results = zone_results["timeseries"].copy()
-        self._detailed_results["Electricity Load"] = self.cfg["elecLoad"].values
-        self._static_results = zone_results["static"]
-
-        self._has_heat_profiles = True
-
-        # define relevant time series
-        self._heat_profile_names = ['Heating Load', 'Cooling Load']
-
-        self.units.update({'Heating Load':'kW_{th}', 'Cooling Load':'kW_{th}', })
-
-        # append simulation (TODO improve this call)
-        self.timeseries = self.timeseries.join(self._detailed_results[self._heat_profile_names])
-
-        return self.timeseries[self._heat_profile_names]
 
 
-    #: profile references the presets carry by default which
-    #: BuildingConfiguration does not produce, mapped onto the timeseries
-    #: column the renewable simulation already computes them as
-    _SUPPLIED_PROFILES = {"cop": "Heat pump", "pv_yield": "Photovoltaic 1"}
+    #: spec input key -> the column of `timeseries` which carries it. The
+    #: template refers to these by name; this is where the names are bound
+    #: to simulated profiles, and the reason a building has to be simulated
+    #: before its system can be solved anywhere.
+    _PROFILE_COLUMNS = {
+        "elecLoad": "Electricity Load",
+        "hotWaterLoad": "Hot Water Load",
+        "cop": "Heat pump",
+        "pv_yield": "Photovoltaic 1",
+    }
 
-    def _optimization_config(self, spec=None):
+
+    def zone_parameters(self, max_load=None):
         """
-        The building configuration extended by the profiles that specs refer
-        to by name but that `BuildingConfiguration` does not itself produce.
+        The 5R1C parameterization of this building's thermal zone.
 
-        Anything already present in the configuration wins, so a caller can
-        pass a dynamic tariff or a measured yield instead.
+        Ten scalars and five time series, computed from the configuration
+        without solving anything - see `tsib.envelope.zone_parameters`.
+        This is the contract an energy system model is handed, and what the
+        future forward heat load model will consume.
+        """
+        return tsib.envelope.zone_parameters(self.cfg, max_load=max_load)
+
+
+    def system_spec(self, params):
+        """
+        This building's energy system as a plain, serializable dictionary.
 
         Parameters
         ----------
-        spec: SystemSpec or dict, optional
-            Restricts the simulation to the profiles this spec actually
-            asks for - a pure heat load run must not pay for a PV
-            simulation it never reads. Without a spec every supported
-            profile is provided.
-        """
-        cfg = dict(self.cfg)
-        cfg.setdefault("elecPrice", tsib.optimization.presets.DEFAULT_ELEC_PRICE)
-
-        needed = set(self._SUPPLIED_PROFILES)
-        if spec is not None:
-            needed &= set(tsib.optimization.required_inputs(spec))
-
-        if any(key not in cfg for key in needed):
-            self.getRenewables()
-            for key in needed:
-                # a flat roof carries no PV profile
-                column = self._SUPPLIED_PROFILES[key]
-                if column in self.timeseries:
-                    cfg.setdefault(key, self.timeseries[column].values)
-
-        return tsib.ThermalZoneConfig(cfg)
-
-
-    def optimize(self, spec, solver=None, tee=False, solverOpts=None):
-        """
-        Builds and solves an arbitrary energy system for this building.
-
-        This is the building block kit entry point: it pairs a system
-        description with the building's resolved configuration, so the same
-        spec can be applied to any parameterized building. Profile
-        references in the spec ("@elecLoad", "@cop", ...) are resolved
-        against this building's configuration.
-
-        Occupancy profiles are simulated first if they are not available
-        yet, since they drive the internal gains of the thermal zone.
-
-        Parameters
-        ----------
-        spec: SystemSpec or dict, required
-            e.g. from `tsib.optimization.presets`.
-        solver: str, optional (default: $SOLVER or auto-detected)
-        tee: bool, optional (default: False)
-            Stream the solver log.
-        solverOpts: dict, optional
+        params: BuildingSystemParameters or dict, required
+            The equipment sheet, i.e. what the building has.
 
         Returns
         -------
-        dict of component name -> results. The thermal zone reports
-        "timeseries"/"static"; every other component its flows and, where
-        invested, its capacity.
+        dict - buses, components and scalars, with every time series
+        referenced by name. Pair it with `system_inputs` and hand both to
+        an energy system model.
+        """
+        return tsib.system.build_spec(params, self.zone_parameters())
 
-        Examples
-        --------
-        >>> from tsib.optimization import presets
-        >>> results = bdg.optimize(presets.hp_pv_battery(pv_kwp=8.0))
-        >>> results["thermalzone"]["timeseries"]["Heating Load"].sum()
+
+    def system_inputs(self, spec, elecPrice=None):
+        """
+        The time series a spec of this building refers to.
+
+        Every "@key" in the spec is resolved here: the zone's own series,
+        the simulated profiles of `_PROFILE_COLUMNS`, the electricity
+        tariff, and anything else already present in the configuration.
+        Occupancy is simulated if it is missing, since it drives both the
+        household load and the internal gains, and so are the renewable
+        potentials if the spec asks for them. Whatever cannot be provided
+        is reported by name rather than failing deep inside another model.
+
+        Parameters
+        ----------
+        spec: dict, required
+            As returned by `system_spec`.
+        elecPrice: float or array-like, optional
+            Tariff [EUR/kWh]. A scalar is a flat tariff, an array a dynamic
+            one. Defaults to the configuration, then to a flat fallback.
+
+        Returns
+        -------
+        (inputs, timeindex) - a plain mapping of key to values, and the
+        index they are given on.
         """
         if not self._has_occupancy_profiles:
             self._get_occupancy_profile(self.cfg)
 
-        es, nodes = tsib.optimization.build_system(
-            spec, self._optimization_config(spec),
-            timeindex=self.cfg["weather"].index
-        )
-        model, _ = tsib.optimization.solve(
-            es, solver=solver, tee=tee, solverOpts=solverOpts
-        )
-        self.energysystem = es
-        self.model = model
-        self.nodes = nodes
+        needed = set(tsib.system.required_inputs(spec))
 
-        return tsib.optimization.node_results(
-            model, nodes, index=self.cfg["weather"].index
-        )
+        available = dict(self.cfg)
+        available.update(self.zone_parameters())
+        if elecPrice is not None:
+            available["elecPrice"] = elecPrice
+        available.setdefault("elecPrice", tsib.system.DEFAULT_ELEC_PRICE)
+
+        if (needed - set(available)) & {"cop", "pv_yield"}:
+            self.getRenewables()
+        for key, column in self._PROFILE_COLUMNS.items():
+            # a flat roof carries no PV profile
+            if key in needed and column in self.timeseries:
+                available.setdefault(
+                    key, self.timeseries[column].to_numpy(dtype=float)
+                )
+
+        inputs = {}
+        missing = []
+        for key in sorted(needed):
+            if available.get(key) is None:
+                missing.append(key)
+            else:
+                inputs[key] = available[key]
+
+        if missing:
+            raise KeyError(
+                "The building provides no {}. Simulate the missing profiles "
+                "first - getOccupancy() for the loads, getRenewables() for "
+                "the COP and the PV yield.".format(", ".join(missing))
+            )
+
+        return inputs, self.cfg["weather"].index
+
 
 
     def getHeatingSystem(self):
