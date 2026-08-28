@@ -11,9 +11,11 @@ tsib is a python package that builds up on different databases and models for cr
 > (see [Installation](#installation)).
 >
 > What changed here: the package was modernized for Python 3.12-3.14 and current dependencies,
-> and the in-house MILP layer was replaced by an energy system optimization built on
-> [oemof-solph](https://github.com/oemof/oemof-solph). See [`docs/`](docs/) for the current
-> architecture, and [Origin and attribution](#origin-and-attribution) for credit and licensing.
+> and the energy system model was **split out entirely** into
+> [`esmkit`](https://github.com/simu-flex-lokal/esmkit). tsib describes buildings and produces
+> their time series; it needs no solver and no optimization framework. See [`docs/`](docs/) for
+> the current architecture, and [Origin and attribution](#origin-and-attribution) for credit and
+> licensing.
 
 
 ## Features
@@ -21,8 +23,8 @@ tsib is a python package that builds up on different databases and models for cr
 * simple building definition based on an archetype building catalogue
 * consideration of the occupancy behavior
 * derivation of the electric device load or the demand for thermal comfort
-* calculation of the heat load based on a thermal building model
-* optimization of the building energy system - dispatch, flexibility and investment sizing - solving the thermal zone jointly with storage, PV and price signals
+* the complete 5R1C parameterization of a building's thermal zone - envelope coefficients, gains and comfort band - derived without any solver
+* a serializable description of the building's energy system: what equipment it has, how it is wired, and which time series it needs
 * provision of location specific time series for solar irradiation and temperature based on weather data
 
 
@@ -33,7 +35,6 @@ tsib is a flexible tool which allows the use of different models and databases f
 * [pvlib](https://github.com/pvlib/pvlib-python) for solar irradiance calculation and photovoltaic simulation
 * [TABULA/EPISCOPE](http://episcope.eu/) archetype building catalogue
 * [DWD Testreferenzjahre](https://www.dwd.de/DE/leistungen/testreferenzjahre/testreferenzjahre.html)  for providing weather data
-* [oemof-solph](https://github.com/oemof/oemof-solph) as the optimization framework for the building energy system
 
 
 ## Installation
@@ -47,32 +48,32 @@ and install it with [uv](https://docs.astral.sh/uv/) (recommended - the reposito
 `uv.lock`)
 
 	cd tsib
-	uv sync --extra highs
+	uv sync
 
 or with pip
 
 	cd tsib
-	pip install '.[highs]'
+	pip install .
 
-tsib requires Python 3.12 or newer.
+tsib requires Python 3.12 or newer. **No solver is needed**: nothing in tsib optimizes anything.
 
-### Solver
+### The energy system model
 
-The 5R1C thermal building model and every other energy system optimization are solved as a
-(MI)LP, so tsib needs a solver. The free, open-source default is HiGHS, pulled in by the `highs`
-extra used above. Gurobi is available the same way (`--extra gurobi` / `'.[gurobi]'`), and
-separately installed cplex, scip or cbc installations are picked up as well.
+Dispatch, flexibility and investment sizing live in
+[`esmkit`](https://github.com/simu-flex-lokal/esmkit), which reads the spec and the time series
+tsib emits. Install it alongside tsib when you want to solve something - it brings
+oemof-solph and a solver of your choice.
 
-Solvers are auto-detected in the order `gurobi, cplex, scip, cbc, highs` - commercial ones first,
-HiGHS last as the free fallback. Set the `$SOLVER` environment variable to force one explicitly:
+### Heat load
 
-	SOLVER=highs python your_script.py
-
-Note that glpk is not supported for this model.
+`Building.getHeatLoad()` currently raises `NotImplementedError`. It used to be a MILP solve,
+which left with the energy system model; the solver-free forward 5R1C that replaces it is the
+next piece of work. Everything it needs is in place - `Building.zone_parameters()` returns the
+full parameterization of the zone.
 
 ### Development
 
-	uv sync --group dev --extra highs
+	uv sync --group dev
 	uv run pytest
 
 
@@ -80,13 +81,12 @@ Note that glpk is not supported for this model.
 
 This [jupyter notebook](examples/showcase.ipynb) shows the capabilites of tsib to create all relevant time series.
 
-For the energy system side, [`EnergySystemDemo.ipynb`](examples/energysystem/EnergySystemDemo.ipynb)
-walks through flexibility, PV and battery investment sizing, and a full-year whole-building
-workflow, while [`chp_component.py`](examples/energysystem/chp_component.py) shows how to add your
-own technology to the building block kit.
+For the energy system side,
+[`system_export_demo.py`](examples/buildingsystem/system_export_demo.py) takes one archetype from
+an ID to a spec and its input series on disk - the complete handover to a model.
 
 Further documentation lives in [`docs/`](docs/), in particular
-[`docs/energysystem.md`](docs/energysystem.md).
+[`docs/building-system.md`](docs/building-system.md).
 
 
 ## Origin and attribution

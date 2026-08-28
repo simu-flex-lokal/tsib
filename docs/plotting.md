@@ -85,7 +85,7 @@ assumes the template's bus names (`heat`, `cool`); pass `spec=` if yours differ.
 
 **The comfort band is not flat.** `comfortT_lb` / `comfortT_ub` are only the nominal band.
 `plot_zone` draws the *effective* one from
-[`optimization.comfort_bounds`](../tsib/optimization/zone5r1c.py) — the same function the
+[`tsib.envelope.comfort_bounds`](../tsib/envelope/comfort.py) — the same function the
 optimization constrains against, so the picture cannot drift from the model. With the default
 `nightReduction=True` the floor drops while the occupants sleep, and with `capControl=False` the
 ceiling collapses onto the floor and the zone has no thermal flexibility at all. A flat band

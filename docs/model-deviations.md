@@ -1,5 +1,12 @@
 # Known deviations of the 5R1C zone from its sources
 
+> **Where the model lives.** The MILP implementation of this zone moved to
+> [`esmkit`](https://github.com/simu-flex-lokal/esmkit) (`esmkit/components/zone5r1c.py`), which
+> carries its own copy of this register. It is kept here because the deviations are properties
+> of *the model tsib was validated against*: they are load-bearing for the 198.1 kWh/m²/a in
+> `test/data/golden/`, and the solver-free forward 5R1C that will replace `getHeatLoad()` has to
+> reproduce them, not correct them.
+
 **Nothing here is fixed.** The implementation deliberately reproduces the original
 `thermal/model5R1C.py` bit-for-bit, so the results stay comparable. That parity survived two
 rewrites — the component refactor and the migration to oemof-solph — and is now pinned by the
@@ -7,7 +14,9 @@ golden fixtures in `test/data/golden/`. This file records what looks wrong and w
 alone, so it gets investigated on purpose rather than rediscovered by accident — or "corrected"
 without realising the reference numbers move.
 
-**Read this before changing any equation in `optimization/zone5r1c.py`.**
+**Read this before implementing or changing any 5R1C equation**, on either side:
+`esmkit/components/zone5r1c.py` today, `tsib/envelope/` for the gains and the
+comfort band, and whatever the forward model becomes.
 
 ## Sources
 
@@ -39,7 +48,7 @@ its extensions"* — and states only two comfort bounds of its own (Eqs. 3.1/3.2
 
 ## 1. Windows are driven by the mass node instead of the surface node
 
-**Likely bug. Unmeasured.** `optimization/zone5r1c.py`, `envelope_flow` (driver) and
+**Likely bug. Unmeasured.** `esmkit/components/zone5r1c.py`, `envelope_flow` (driver) and
 `surface_node_balance` (use)
 
 Every envelope element shares one driver — `envelope_flow` returns
@@ -60,7 +69,7 @@ amplitude of the window losses.
 
 ## 2. Ventilation is driven by the mass node instead of the air node
 
-**Likely bug. Unmeasured.** `optimization/zone5r1c.py`, `envelope_flow` (driver) and
+**Likely bug. Unmeasured.** `esmkit/components/zone5r1c.py`, `envelope_flow` (driver) and
 `air_node_balance` (use)
 
 Same shared driver. Eq. (22) couples ventilation to the **air** node:
@@ -75,7 +84,7 @@ $H_{ve} = \kappa_{air}\,\rho_{air}\,q_{ve,avg}$ — a pure air heat-capacity flo
 
 ## 3. The air node receives the surface gain instead of the internal gain
 
-**Likely bug. Unmeasured.** `optimization/zone5r1c.py`, `air_node_balance`
+**Likely bug. Unmeasured.** `esmkit/components/zone5r1c.py`, `air_node_balance`
 
 The air balance uses `zone.gain_surface_node(t)` — that is $\phi_{st}$, the window/solar
 weighted surface gain of Eq. (19). Per Eq. (22) the right-hand side is $\phi_{ia} + \phi_{HC}$,
@@ -96,8 +105,8 @@ are injected into the air node where the standard puts only half the internal ga
 
 ## 4. Fictitious cooling against a hard comfort ceiling
 
-**Deliberate in [K18], but a real modelling limitation.** `optimization/zone5r1c.py`
-(`Q_cool_internal`, `comfort_ub`), `optimization/presets.py` (`DEFAULT_COOL_COST`)
+**Deliberate in [K18], but a real modelling limitation.** `esmkit/components/zone5r1c.py`
+(`Q_cool_internal`, `comfort_ub`), `tsib/system.py` (`DEFAULT_COOL_COST`)
 
 `comfort_ub` is a hard constraint and `Q_cool` is an unbounded non-negative variable priced at
 `DEFAULT_COOL_COST = 0.02 EUR/kWh`. Gains above the band therefore *force* cooling — including in

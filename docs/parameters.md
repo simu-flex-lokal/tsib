@@ -9,12 +9,11 @@ There are three levels, and the first two are easy to confuse:
    `KWARG_DEFAULTS` at the top of `tsib/buildingconfig.py`.
 2. **`BuildingSystemParameters`** — *what the building has*: which equipment is installed and
    how big it is. The exchange format, see [§9](#9-the-equipment-sheet).
-3. **Spec / preset parameters** — *how it is wired*: the components and buses of the
-   optimization itself. See [§8](#8-spec--preset-parameters).
+3. **The spec** — *how it is wired*: the buses and components tsib emits for an energy system
+   model to build. See [§8](#8-the-spec-and-the-zone-contract).
 
 The building configuration does **not** decide its own energy system. A building has PV because
-its equipment sheet says so — `BuildingSystemParameters(equipment={"pv": {"kwp": 8.0}})` — or
-because a preset builds one. See
+its equipment sheet says so — `BuildingSystemParameters(equipment={"pv": {"kwp": 8.0}})`. See
 [§7](#7-parameters-that-do-less-than-their-name-suggests).
 
 ## Minimal input
@@ -23,10 +22,11 @@ A TABULA/EPISCOPE archetype ID alone is enough — everything else has a default
 
 ```python
 import tsib
-from tsib.optimization import presets
 
 bdg = tsib.Building(tsib.BuildingConfiguration({"ID": "DE.N.SFH.05.Gen.ReEx.001.001"}))
-results = bdg.optimize(presets.hp_pv_battery(pv_kwp=8.0, battery_kwh=10.0, hp_kw=25.0))
+sheet = tsib.BuildingSystemParameters(equipment={"pv": {"kwp": 8.0}})
+spec = bdg.system_spec(sheet)
+inputs, index = bdg.system_inputs(spec)
 ```
 
 The only hard external requirement is a MILP solver (`uv sync --extra highs`, or `$SOLVER`).
@@ -123,24 +123,24 @@ demand (`@elecLoad`). Both come from the stochastic CREST-derived model in `tsor
 | `mean_load` | bool | `False` | Use the mean hourly profile instead of the fluctuating minute-resolution one. Smoother, but it removes the peaks that size a battery. |
 | `seed` | int | derived | Overrides the derived seed to get an independent stochastic realization of the *same* building; physical parameters are untouched. The default seed is built from `n_persons` + `longitude` + `A_ref`, truncated to 8 digits — so two identical buildings reproduce each other, by design. |
 
-**The occupancy simulation runs on the first `optimize()` / `getLoad()` call** and takes minutes,
-not seconds. It is what makes a cold first run slow.
+**The occupancy simulation runs on the first `getOccupancy()` / `system_inputs()` /
+`getLoad()` call** and takes minutes, not seconds. It is what makes a cold first run slow.
 
 ## 6. Equipment and hot water
 
 > **What is *not* here any more.** `existingHeatSupply`, `replaceHeatSupply`, `hasPhotovoltaic`,
 > `hasSolarThermal`, `costdata`, `ownership` and `WACC` used to live in this section. They only
-> ever fed the cache key — no code in `tsib/optimization/` read any of them — and the equipment
+> ever fed the cache key — no code in tsib read any of them — and the equipment
 > sheet ([§9](#9-the-equipment-sheet)) now answers the question they pretended to answer. They
-> were removed rather than kept as inert metadata. Interest rates live on the spec, per
-> component (`wacc`, [§8](#8-spec--preset-parameters)).
+> were removed rather than kept as inert metadata. Interest rates live on the equipment sheet,
+> per component (`wacc`, [§9](#9-the-equipment-sheet)).
 
 | Parameter | Type | Default | What it does |
 |---|---|---|---|
 | `T_sup` | float | derived | Design supply temperature of the heat distribution system [°C]. **This one does matter**: it sets the heat pump COP profile (`@cop`, via `simHeatpump`) — a lower `T_sup` is a better COP. Also sets `T_ret = T_sup - 20`. Derivation: base 70, `+5` if `n_apartments > 6`, `-10` each for `buildingYear` above 1990 / 2000 / 2010, or a flat `40.0` if `floorHeating`. |
 | `floorHeating` | bool | `False` | Underfloor heating, i.e. a low-temperature system. Only consulted when `T_sup` is *not* given explicitly, in which case it pins `T_sup = 40.0`. |
 | `hotWaterElec` | bool | `False` | Hot water is provided electrically rather than by the heating system. Scales `hotWaterLoad` by `0.6` (BDEW correction), applied where the profile is created. |
-| `hasFirePlace` | bool | derived | Wood stove present. Derived as `True` if `A_ref / n_apartments >= 100`, which then also sets `fireplaceSize = 10 kW × n_apartments`. Consumed by `simFireplace`, not by the optimization. |
+| `hasFirePlace` | bool | derived | Wood stove present. Derived as `True` if `A_ref / n_apartments >= 100`, which then also sets `fireplaceSize = 10 kW × n_apartments`. Consumed by `simFireplace`, not by the thermal zone. |
 
 ## 7. Parameters that do less than their name suggests
 
@@ -158,47 +158,51 @@ not seconds. It is what makes a cold first run slow.
   `roof_refurbished`. Envelope/control refurbishment optimization lives on the `refurbishment`
   branch.
 
-## 8. Spec / preset parameters
+## 8. The spec and the zone contract
 
-The spec decides the topology. Time series are `"@key"` references resolved against the
-building configuration, which is what keeps specs serializable and reusable across buildings.
+The spec decides the topology and carries the scalars; time series stay outside it as `"@key"`
+references, which is what keeps it small enough to store and vary across thousands of
+buildings. It is a plain dict — see [`building-system.md`](building-system.md) for its shape.
 
-### `presets.heat_load_only(heat_cost=0.08, cool_cost=0.02, **zone_kwargs)`
+### `Building.system_spec(sheet)`
 
-Pure heat load simulation: the thermal zone plus a priced heat and cool source. The absolute
-price level is irrelevant to the resulting load as long as both are positive — they exist only
-so the objective has something to minimize.
+The equipment sheet plus this building's zone parameters, wired by the one template. Equivalent
+to `tsib.system.build_spec(sheet, bdg.zone_parameters())`.
 
-### `presets.hp_pv_battery(...)`
+### `Building.zone_parameters(max_load=None)`
+
+The 5R1C contract: ten scalars and five series, derived from the configuration without solving
+anything.
 
 | Parameter | Default | What it does |
 |---|---|---|
-| `import_price` | `"@elecPrice"` | Grid import tariff [EUR/kWh], scalar or profile. Falls back to `DEFAULT_ELEC_PRICE = 0.35` — see the gotcha below. |
-| `export_price` | `None` | Feed-in revenue. When `None` the export sink is omitted entirely, so surplus PV is curtailed rather than sold. |
-| `cop` | `"@cop"` | Heat pump COP profile from `simHeatpump`. It is `0` below −20 °C, and those hours are handled by forcing heat output to zero, not by dividing by zero. |
-| `specific_yield` | `"@pv_yield"` | PV yield [kW/kWp] from `simPhotovoltaic`. |
-| `elec_demand` | `"@elecLoad"` | Household electricity demand from tsorb. |
-| `pv_kwp`, `battery_kwh`, `hp_kw`, `buffer_kwh` | `None` | A **number** fixes the capacity; a **dict** (`capex_per_unit`, `lifetime`, `max_capacity`) makes it an investment decision; `None` omits the component — except the heat pump, which is always built. |
-| `cool_cost` | `0.02` | Price of the cooling source [EUR/kWh]. |
-| `wacc` | `0.06` | Interest rate used to annualize the investments in this spec. An assumption of the scenario, not a property of the building. |
+| `max_load` | design heat load | Ceiling of the heating/cooling system [kW]. The model enforces it as a *soft* constraint, so an undersized system reports a violation instead of turning infeasible. |
 
-`zone_kwargs` are forwarded to `ThermalZone5R1C`: `max_load` (defaults to the calculated design
-heat load), `max_load_violation_penalty` (`100.0` EUR/kW), and `initial_T_m` (replaces the
-periodic wrap of the mass node).
+The other nine scalars are derived and not parameterizable here: `H_ms`, `H_is`, `H_door`,
+`C_m`, the five per-element `H` values and `design_capacity`. They follow from the archetype's
+geometry and U-values (§1, §2) and the thermal class.
 
-### `Building.optimize(spec, solver=None, tee=False, solverOpts=None)`
+Two further zone knobs are passed through the sheet's `zone` dict rather than derived —
+`initial_T_m` (a fixed mass temperature at the first step, replacing the periodic wrap) and
+`max_load_violation_penalty` (`100.0` EUR/kW). Anything in `sheet.zone` overrides the derived
+value of the same name.
 
-`solver` defaults to `$SOLVER`, then auto-detects gurobi → cplex → scip → cbc → highs.
+### `Building.system_inputs(spec, elecPrice=None)`
+
+Resolves every `"@key"` the spec names into an array, simulating occupancy and — only if the
+spec asks for `cop` or `pv_yield` — the renewable potentials. `elecPrice` is a scalar for a
+flat tariff or an array for a dynamic one; without it the configuration is consulted and then a
+flat 0.35 EUR/kWh (`tsib.system.DEFAULT_ELEC_PRICE`).
 
 ## 9. The equipment sheet
 
-`BuildingSystemParameters` (`tsib/optimization/parameterization.py`) says **what a building
-has**, without saying how it is wired. `build_spec()` turns it into a `SystemSpec` using the
-one template every tsib building shares, so a few hundred buildings of a synthetic grid are
-described by parameters instead of by hand-authored topologies.
+`BuildingSystemParameters` (`tsib/system.py`) says **what a building has**, without saying
+how it is wired. `build_spec()` turns it into a spec dictionary using the one template every
+tsib building shares, so a few hundred buildings of a synthetic grid are described by
+parameters instead of by hand-authored topologies.
 
 ```python
-from tsib.optimization import BuildingSystemParameters, build_spec
+from tsib.system import BuildingSystemParameters, build_spec
 
 params = BuildingSystemParameters(
     equipment={
@@ -210,10 +214,10 @@ params = BuildingSystemParameters(
     tariff={"import": "@elecPrice", "export": 0.08},
     meta={"bus_id": "pylovo-42", "freq": "h"},
 )
-results = bdg.optimize(build_spec(params))
+spec = bdg.system_spec(params)
 ```
 
-Runnable: [`examples/energysystem/parameterization_demo.py`](../examples/energysystem/parameterization_demo.py).
+Runnable: [`examples/buildingsystem/system_export_demo.py`](../examples/buildingsystem/system_export_demo.py).
 
 Equipment which is absent or `None` is **not built**. An unknown equipment key, or an unknown
 parameter inside one, raises — a typo must not silently size nothing.
@@ -225,8 +229,8 @@ parameter inside one, raises — a typo must not silently size nothing.
 | `battery` | `capacity_kwh`, `power_kw`, `roundtrip_efficiency`, and the `_storage` passthroughs | `battery` on the `elec` bus |
 | `buffer` | `capacity_kwh`, `power_kw`, `standby_loss_kW`, same passthroughs | `thermal_storage` on the `heat` bus |
 
-Any `capacity_*` accepts a number (fixed) or an investment dict, exactly as the presets do —
-`presets.capacity_params` is shared between the two.
+Any `capacity_*` accepts a number (fixed) or an investment dict — `system.capacity_params`
+makes that choice in one place for every builder.
 
 **PV has two forms on purpose.** `kwp` against a specific yield is the tsib-internal form and
 keeps PV sizeable as an investment. A pre-computed absolute `profile` [kW] is the form
@@ -256,7 +260,7 @@ contributes household load, PV and battery rather than heat pump electricity.
 One registered builder, nothing else:
 
 ```python
-from tsib.optimization import equipment
+from tsib.system import equipment
 
 @equipment("ev_charger")
 def _ev_charger(name, params, spec):
@@ -268,28 +272,32 @@ The exchange format, the template and the solver are all unchanged by this.
 
 ### `required_inputs`
 
-`required_inputs(spec)` returns every configuration key a spec will look up — the `"@…"`
-references, resolved. It is what makes the contract between the building configuration and the
-system inspectable *before* building, and it is what lets `Building.optimize` simulate only the
-profiles a given spec actually reads (a `heat_load_only` run no longer pays for a PV
-simulation).
+`required_inputs(spec)` returns every input key a spec will look up — the `"@…"` references,
+resolved. It makes the contract inspectable *before* anything is built, and it is what lets
+`system_inputs` simulate only the profiles a given spec actually reads: a sheet without PV or a
+heat pump never pays for the renewable simulation.
 
 ```python
 >>> params.required_inputs()
-['cop', 'elecLoad', 'elecPrice', 'hotWaterLoad', 'pv_yield']
+['T_e', 'comfort_lb', 'comfort_ub', 'cop', 'elecLoad', 'elecPrice',
+ 'gain_mass', 'gain_surface', 'hotWaterLoad', 'pv_yield']
 ```
+
+The five zone series are in that list for every building: the thermal zone is part of the
+template, not equipment. `Building.system_inputs` supplies them from `zone_parameters()`.
 
 ## 10. Two gotchas
 
 **`elecPrice` is not a `BuildingConfiguration` kwarg.** Passing it raises `ValueError`.
-`_optimization_config` falls back to a flat 0.35 EUR/kWh. To use a real tariff, either pass the
-array into the preset (`presets.hp_pv_battery(import_price=my_array)`) or set
-`bdg.cfg["elecPrice"] = ...` after constructing the `Building`.
+`system_inputs` falls back to a flat 0.35 EUR/kWh. To use a real tariff, pass it in —
+`bdg.system_inputs(spec, elecPrice=my_array)` — or set `bdg.cfg["elecPrice"] = ...` after
+constructing the `Building`.
 
 **Fixed capacities can make the model infeasible.** A heat pump smaller than the design heat
-load, combined with the hours where the COP is zero, has no feasible dispatch, and HiGHS reports
-`A feasible solution was not found`. Check `bdg.zone_config.calcDesignHeatLoad()` before fixing
-`hp_kw`, or pass an investment dict and let it size itself.
+load, combined with the hours where the COP is zero, has no feasible dispatch, and the solver
+reports `A feasible solution was not found` — in the model, i.e. long after tsib is done. Check
+`bdg.zone_config.calcDesignHeatLoad()` before fixing `capacity_kw`, or pass an investment dict
+and let it size itself.
 
 ## Where the values come from
 
