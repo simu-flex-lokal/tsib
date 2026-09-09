@@ -100,7 +100,7 @@ decision variable inside the band, so thermal mass can be charged when energy is
 | Parameter | Type | Default | What it does |
 |---|---|---|---|
 | `comfortT_lb` | float | `21.0` | Lower comfort bound [°C]. With no smart thermostat this is where `T_air` is pinned. Warns if `comfortT_lb >= comfortT_ub - 0.5`, which makes the LP numerically nasty. |
-| `comfortT_ub` | float | `24.0` | Upper comfort bound [°C]. A **hard** ceiling, so summer gains above it force cooling even in a building with no cooling device — see `model-deviations.md` item 4. |
+| `comfortT_ub` | float | `24.0` | Upper comfort bound [°C]. A **hard** ceiling, so summer gains above it force cooling even in a building with no cooling device, unless the equipment sheet passes `can_cool=False` and `comfort_ub_penalty` to the zone. |
 | `capControl` | bool | `True` | Smart thermostat. **This is the flexibility switch.** At `False` the band collapses to `comfortT_lb` and the building has no storage value at all; at `True` it opens to the full `comfortT_lb … comfortT_ub`. |
 | `nightReduction` | bool | `True` | Night setback. Lets the lower bound drop toward 18 °C in proportion to the share of occupants asleep. |
 | `occControl` | bool | `False` | Occupancy-driven control. Lets the band widen toward 14 °C (lower) and 30 °C (upper) in proportion to the share of occupants away from home. |

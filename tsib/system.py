@@ -434,8 +434,10 @@ def build_spec(params, zone_params=None):
                        profile="@elecLoad")
     spec.add_component("dhw_load", "demand", bus=HEAT_BUS,
                        profile="@hotWaterLoad")
-    # the comfort ceiling is a hard bound, so the zone always needs a way to
-    # shed heat - see deviation 4 in docs/model-deviations.md
+    # The comfort ceiling is a hard bound by default, so the zone needs a way
+    # to shed heat or a summer with any solar gain is infeasible. A sheet may
+    # override this with can_cool=False plus comfort_ub_penalty, which lets
+    # the zone drift above the band and pay per Kelvin-hour instead.
     spec.add_component("cool_supply", "source", bus=COOL_BUS,
                        price=DEFAULT_COOL_COST)
 

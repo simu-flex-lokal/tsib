@@ -5,7 +5,6 @@
 | [`building-system.md`](building-system.md) | The three descriptions of a building, the spec tsib emits, and the ten scalars plus five series that are the thermal zone's whole contract with an energy system model. | You are handing a building to a model, or wondering where the optimization went. |
 | [`parameters.md`](parameters.md) | Every `BuildingConfiguration` kwarg and equipment sheet entry: type, default, how it is derived, and what it actually affects downstream. | You are parameterizing a building and want to know which knob does what — or why one you set had no effect. |
 | [`plotting.md`](plotting.md) | `tsib.plotting`: the functions, the four ways to look at a year (window, resample, heatmap, load duration), and the sign conventions. | You are plotting initialized profiles or the thermal zone. |
-| [`model-deviations.md`](model-deviations.md) | Register of four known deviations of the 5R1C thermal zone from its source publications. All deliberately **unfixed** to preserve parity with the original model. | **Before implementing or changing any 5R1C equation**, or if a result looks physically wrong. |
 
 This index lists **user-facing documentation only** — reference material for people using or
 extending `tsib`. Design notes, open problems, and feature ideas live in the untracked

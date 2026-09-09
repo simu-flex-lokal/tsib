@@ -407,7 +407,8 @@ class Building(object):
         The air temperature has to stay inside the comfort band of
         `tsib.envelope.comfort_bounds(self.cfg)` and the load below
         `zone_parameters()["max_load"]`. Parity target for the result:
-        test/data/golden/zone_year.csv.gz and zone_year_aggregates.json.
+        esmkit's golden fixture, test/data/golden/zone_year.csv.gz and
+        zone_year_aggregates.json in that repository.
         '''
         raise NotImplementedError(
             "The 5R1C heat load is not available: it used to be a MILP "

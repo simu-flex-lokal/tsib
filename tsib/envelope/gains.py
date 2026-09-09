@@ -10,9 +10,9 @@ together with the derived heat transfer coefficients into the ten scalars
 and five time series which are the whole contract of the zone - the same
 contract an external energy system model is handed.
 
-Physics after DIN EN ISO 13790 in the formulation of Schuetz et al. 2017.
-The deviations carried over from the pre-migration model are documented in
-docs/model-deviations.md.
+Physics in the formulation of Schuetz et al. 2017. The deviations the solved
+zone still carries are documented in esmkit, which owns that register:
+https://github.com/simu-flex-lokal/esmkit/blob/master/docs/model-deviations.md
 """
 
 import numpy as np

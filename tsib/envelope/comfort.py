@@ -22,7 +22,9 @@ def comfort_bounds(cfg, n_steps=None):
 
     LIMITATION (deliberate, Kotzur 2018 - eq. 3.2): the upper bound is hard,
     so gains above the band force cooling even in a building without any
-    cooling device. See docs/model-deviations.md item 4.
+    cooling device. esmkit's zone can switch that off - see the deviation
+    register at
+    https://github.com/simu-flex-lokal/esmkit/blob/master/docs/model-deviations.md
 
     Parameters
     ----------
