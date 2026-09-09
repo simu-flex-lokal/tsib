@@ -1,166 +1,100 @@
-# Known deviations of the 5R1C zone from its sources
+# Known deviations of the 5R1C zone
 
-> **Where the model lives.** The MILP implementation of this zone moved to
-> [`esmkit`](https://github.com/simu-flex-lokal/esmkit) (`esmkit/components/zone5r1c.py`), which
-> carries its own copy of this register. It is kept here because the deviations are properties
-> of *the model tsib was validated against*: they are load-bearing for the 198.1 kWh/m²/a in
-> `test/data/golden/`, and the solver-free forward 5R1C that will replace `getHeatLoad()` has to
-> reproduce them, not correct them.
+`esmkit/components/zone5r1c.py` implements the 5R1C reduced-order zone of
+DIN EN ISO 13790 as formulated by Schuetz et al. 2017 (*Optimal design of energy
+conversion units and envelopes for residential building retrofits using a
+comprehensive MILP model*, Applied Energy 185, Eqs. 20-22) and extended by
+Kotzur 2018 (dissertation, Sec. 3.2.2, Eqs. 3.1-3.2).
 
-**Nothing here is fixed.** The implementation deliberately reproduces the original
-`thermal/model5R1C.py` bit-for-bit, so the results stay comparable. That parity survived two
-rewrites — the component refactor and the migration to oemof-solph — and is now pinned by the
-golden fixtures in `test/data/golden/`. This file records what looks wrong and why it was left
-alone, so it gets investigated on purpose rather than rediscovered by accident — or "corrected"
-without realising the reference numbers move.
+Some node balances still do **not** match those references. What is listed below
+is what remains after the envelope wiring was corrected on 2026-09-09.
 
-**Read this before implementing or changing any 5R1C equation**, on either side:
-`esmkit/components/zone5r1c.py` today, `tsib/envelope/` for the gains and the
-comfort band, and whatever the forward model becomes.
+## Removed on 2026-09-09: windows and ventilation on the mass node
 
-## Sources
+Until then, `air_node_balance` drove ventilation from `T_m` instead of `T_air`
+(against Schuetz Eq. 22) and `surface_node_balance` drove window transmission
+from `T_m` instead of `T_s` (against Eq. 21). Both referenced the loss to the
+coldest indoor node while heating, so both understated the driving temperature
+difference and with it the heat demand - by 11.0 kWh/m2a on the
+reference building, 5.6 % of the old figure (198.111 to 209.143 kWh/m2a).
 
-- **[S17]** Schütz, T., Schiffer, L., Harb, H., Fuchs, M., Müller, D. (2017): *Optimal design of
-  energy conversion units and envelopes for residential building retrofits using a comprehensive
-  MILP model.* Applied Energy 185(1), 1–15.
-  [doi:10.1016/j.apenergy.2016.10.049](https://doi.org/10.1016/j.apenergy.2016.10.049).
-  The origin of the MILP 5R1C formulation. **Unqualified equation numbers below are [S17]'s.**
-- **[K18]** Kotzur, L. (2018): *Future Grid Load of the Residential Building Sector.*
-  Dissertation, RWTH Aachen / FZJ Energie & Umwelt 442, ISBN 978-3-95806-370-9, §3.2.2. The work
-  tsib implements.
+They had been carried deliberately, for parity with the pre-migration tsib
+implementation, and were kept because the lower figure sat closer to the TABULA
+benchmark. That argument does not hold: the TABULA comparison is confounded by
+larger, uncontrolled differences - TABULA adds a thermal-bridging surcharge of
+0.1 W/m2K that tsib omits (worth about 21 kWh/m2a), applies a temperature
+reduction factor of 0.8385 that the LP does not (about 40 kWh/m2a), and has no
+counterpart to the constant longwave radiation term in `tsib.envelope.gains`
+(about 19 kWh/m2a over the heating season). A benchmark that is uncalibrated at
+three larger points cannot arbitrate an 11 kWh/m2a question.
 
-**Triage rule.** [K18] defers all model equations to [S17] — *"The detailed description of the
-mathematical model itself is done by Schütz et al. [2017a]. Hence, this section only describes
-its extensions"* — and states only two comfort bounds of its own (Eqs. 3.1/3.2). Therefore:
-**node balances are [S17]'s to define, so a mismatch there is sanctioned by neither source
-(items 1–3). The comfort band is [K18]'s (item 4).**
+The golden fixtures were regenerated from the corrected model; they no longer
+pin parity with the pre-migration stack. See `test/data/golden/golden_meta.json`.
 
-## Summary
+## 1. The surface gain is spent twice, and there is no air-node gain
 
-| # | Deviation | Verdict | Measured impact |
-|---|---|---|---|
-| 1 | Windows driven by mass node, not surface node | likely bug | unmeasured |
-| 2 | Ventilation driven by mass node, not air node | likely bug | unmeasured |
-| 3 | Air node gets surface gain, not internal gain | likely bug | unmeasured |
-| 4 | Fictitious cooling against a hard comfort ceiling | deliberate, but limiting | 8.2 kWh/m²a of cooling that cannot exist; +0.3 % heating |
+*Code*: without `gain_air`, the right-hand side of `air_node_balance` is
+`gain_surface[t] - Q_cool + Q_heat` - the very same series that already appears
+on the right-hand side of `surface_node_balance`.
+*Reference*: Schuetz Eq. (22) has `phi_ia + phi_HC`, where `phi_ia = 0.5 * phi_int`
+(Eq. 14) is a separate quantity from the surface gain `phi_st` (Eq. 19).
+*Consequence*: the surface gain is credited at both nodes, and the convective
+share of the internal gains is not modelled in its own right unless `gain_air`
+is supplied. The air node is over-supplied with gains, which lowers the computed
+heating load.
 
----
+## 2. The comfort band bounds the air temperature
 
-## 1. Windows are driven by the mass node instead of the surface node
+*Code*: `comfort_lb` / `comfort_ub` constrain `T_air`.
+*Reference*: this one follows the papers - Schuetz Eq. (26) and Kotzur
+Eqs. (3.1)-(3.2) bound `theta_air` too. It is ISO 13790 itself that defines the
+set point on the *operative* temperature, roughly `0.3 * T_air + 0.7 * T_s`.
+*Consequence*: the radiant half of perceived comfort is ignored. In winter the
+surfaces sit below the air, so an air-temperature band is the looser constraint
+and the heating load comes out slightly lower than an operative band would give.
 
-**Likely bug. Unmeasured.** `esmkit/components/zone5r1c.py`, `envelope_flow` (driver) and
-`surface_node_balance` (use)
+## 3. Cooling is free when no `cool_bus` is attached
 
-Every envelope element shares one driver — `envelope_flow` returns
-`H_element(element) * (T_m[zone, t] - T_e[t])` for all elements, including `Windows`.
-Eq. (21) couples windows to the **surface** node:
+*Code*: without a `cool_bus`, cooling is `Q_cool_internal`, a non-negative
+variable that appears in no cost term anywhere. `can_cool=False` fixes it to
+zero, and `comfort_ub_penalty` prices the band breach that then follows.
+*Reference*: Schuetz models no cooling system at all and deliberately omits the
+upper temperature bound (Sec. 2.3.5). Kotzur adds the upper bound (Eq. 3.2),
+reads the resulting cooling load off it, but never prices it either - and notes
+that the 5R1C model overestimates cooling demand against VDI 6007 (p. 33).
+*Consequence*: summer overheating is relieved at zero cost, so the reported
+cooling load is an unpriced upper bound and the zone never trades summer comfort
+against anything else in the system. Attach a `cool_bus` whenever cooling should
+compete for money or capacity - the parity fixture does exactly that.
 
-$$H_{tr,ms}(\theta_s - \theta_m) + H_{tr,is}(\theta_s - \theta_{air}) + \underbrace{H_{tr,w}(\theta_s - \theta_e)}_{\text{code uses } (T_m - T_e)} = \phi_{st}$$
+## 4. The mass balance steps forward, not backward
 
-Only the *opaque* elements may legitimately use $(\theta_m - \theta_e)$ — via Eq. (20) with the
-$H_{tr,em} \approx H_{tr,op}$ approximation of Eq. (9). The mass node is correct on that count.
+*Code*: `mass_node_balance` evaluates every conductance and gain term at step `t`
+and sets them against `C_m * (T_m[t+1] - T_m[t]) / dt`.
+*Reference*: Schuetz Sec. 2.3.5 approximates `C_m * d(theta_m)/dt` as
+`C_m * (theta_m,t - theta_m,t-1) / dt`, a backward difference taken at the same
+instant the balance is written.
+*Consequence*: an explicit rather than an implicit Euler step. Annual sums are
+barely affected; hourly traces are shifted by one step against a backward-Euler
+implementation of the same equations.
 
-**Why it plausibly matters:** $T_m$ is the slow, inertia-damped node while $T_s$ tracks the air
-closely. Driving a low-inertia, high-$U$ element from the slow node misplaces both phase and
-amplitude of the window losses.
+## Boundary condition on `T_m`
 
-**To verify:** give `Windows` the driver `T_s[zone, t] - T_e[t]`; re-run
-`test_optimization_zone.py::test_heatload_reference` and the [K18] Fig. 3.8 IWU comparison.
+Not a deviation, but easy to trip over: at the last step `mass_rule` balances
+back around to step 0, so `T_m` closes cyclically over the horizon. Passing
+`initial_T_m` drops that wrap-around and pins the first step instead, turning
+the horizon open. Neither paper specifies this; a short horizon solved cyclically
+will disagree with the same horizon solved from a fixed start.
 
-## 2. Ventilation is driven by the mass node instead of the air node
+## Before changing any of this
 
-**Likely bug. Unmeasured.** `esmkit/components/zone5r1c.py`, `envelope_flow` (driver) and
-`air_node_balance` (use)
+Each of these four changes the numbers, and `test/test_zone.py` will go red the
+moment one moves. That is the point: the fixtures catch drift, they do not tell
+you which formulation is right. If you change one deliberately, regenerate the
+expected half of the fixture and record what changed and why in
+`test/data/golden/golden_meta.json`, as the 2026-09-09 entry does.
 
-Same shared driver. Eq. (22) couples ventilation to the **air** node:
-
-$$\underbrace{H_{ve}(\theta_{air} - \theta_e)}_{\text{code uses } (T_m - T_e)} + H_{tr,is}(\theta_{air} - \theta_s) = \phi_{ia} + \phi_{HC}$$
-
-Physically the most clear-cut of the three: ventilation exchanges *air* with the environment, so
-its driving temperature difference is the air node's by definition. Eq. (12) defines
-$H_{ve} = \kappa_{air}\,\rho_{air}\,q_{ve,avg}$ — a pure air heat-capacity flow.
-
-**To verify:** as item 1, with driver `T_air[zone, t] - T_e[t]`.
-
-## 3. The air node receives the surface gain instead of the internal gain
-
-**Likely bug. Unmeasured.** `esmkit/components/zone5r1c.py`, `air_node_balance`
-
-The air balance uses `zone.gain_surface_node(t)` — that is $\phi_{st}$, the window/solar
-weighted surface gain of Eq. (19). Per Eq. (22) the right-hand side is $\phi_{ia} + \phi_{HC}$,
-and Eq. (14) defines simply
-
-$$\phi_{ia} = 0.5 \cdot \phi_{int}$$
-
-— half the internal gains, with no solar term at all. $\phi_{st}$ belongs to the *surface*
-balance (Eq. 21), where the code does use it correctly.
-
-The original model computed a `Q_ia` term and never used it; the component refactor dropped it
-as dead code. That dead variable suggests an old slip rather than a decision.
-
-**Why it plausibly matters:** a magnitude error rather than a phase error — solar-weighted gains
-are injected into the air node where the standard puts only half the internal gains.
-
-**To verify:** replace with `0.5 * self._profiles["Q_ig"][t]`; re-run the reference tests.
-
-## 4. Fictitious cooling against a hard comfort ceiling
-
-**Deliberate in [K18], but a real modelling limitation.** `esmkit/components/zone5r1c.py`
-(`Q_cool_internal`, `comfort_ub`), `tsib/system.py` (`DEFAULT_COOL_COST`)
-
-`comfort_ub` is a hard constraint and `Q_cool` is an unbounded non-negative variable priced at
-`DEFAULT_COOL_COST = 0.02 EUR/kWh`. Gains above the band therefore *force* cooling — including in
-buildings with no cooling device, which is the norm for the German residential stock this model
-targets. There is no parameter to declare that a building cannot cool.
-
-**This is intentional.** [K18] p. 36, Eq. (3.2): *"The upper bound of the temperature
-$T_{air,ub}^{com}$ limits the heating operation and determines the cooling load in the summer
-period […] The general upper bound for the temperature is set to 26 °C."* It is an addition, not
-inherited: [S17] has no upper bound at all (its Eq. 26 is $\theta_{air} \ge \theta_{set}^{lb}$)
-and free-floats instead.
-
-**But [K18] §3.2.1 also concedes the output is weak**, of the very model it adopts: *"Only the
-cooling demands are overestimated, which is not relevant for this work since they are not
-considered in the optimization"* — which sits in tension with `coolCost` appearing in the
-objective. Reasonable reading: an acknowledged-inaccurate byproduct the author never used (his
-thesis concerns *electrical* grid load, which is heating-dominated). tsib is now applied to
-things [K18] was not.
-
-**Measured impact.** Reference building (TABULA `index[24]`, TRY 4, band 20–26 °C, full year),
-current versus $Q_{cool}$ fixed to 0 with `comfort_ub` deactivated:
-
-| | heating | cooling | $T_{air}$ max | h > 26 °C |
-|---|---|---|---|---|
-| current | 197.32 kWh/m²a | **8.20 kWh/m²a** | 26.00 °C | 0 |
-| free-float | 196.72 kWh/m²a | 0 | 39.59 °C | 752 |
-
-1420 kWh/a of a service that cannot physically exist; the knock-on error on *heating* is only
-0.6 kWh/m²a (**0.3 %**), because the seasons barely overlap. [K18] Fig. 3.8 reports RMSE
-6.79–6.82 kWh/m²a against IWU, so the heating side-effect sits an order of magnitude inside the
-existing validation noise — **fixing the cooling will not threaten the reference test.**
-
-**Do not simply delete the bound.** It does two jobs, as [K18]'s own sentence says: it *"limits
-the heating operation"* **and** *"determines the cooling load"*. Only the second is wrong.
-[S17]'s justification for having no bound — the optimiser will not overheat because heat costs
-money — holds only under *constant* prices; with time-varying prices, pre-heating pays and an
-unbounded zone would be driven to 40 °C for arbitrage. Separating the two jobs exactly requires a
-disjunction and one binary per time step, which would destroy the full-year LP.
-
-→ **This item is written up in full, self-contained, for outside readers in the internal note
-`backlog/open-problem-summer-overheating.md`** (not part of the published documentation): the
-physics, the proposed penalised-slack formulation, the missing window-opening model, the Kh/a
-comfort metrics (DIN 4108-2, EN 15251/16798-1), and five open research questions. Start there
-before touching this.
-
----
-
-## Note on [K18] Eq. (3.2): the code corrects a typo
-
-Do **not** "fix" the comfort ceiling to match the printed equation. As printed, Eq. (3.2)
-subtracts $(T_{air,lb}^{com} - T_{air,ub}^{vac})$, which yields a 36 °C vacancy bound and
-contradicts the surrounding text. The code uses $(T_{ub}^{com} - 30)$, matching the stated
-$T_{air,ub}^{vac} = 30\ °C$. The code is right and the thesis has a typo.
-
-tsib additionally gates the band width on the smart-thermostat investment decision, which
-Eq. (3.2) does not show — without that decision both bounds collapse to $T_{lb}$ and the zone is
-pinned, which is [K18]'s "5R1C fix" validation case.
+Note what the fixtures cannot do: they cannot arbitrate between formulations,
+and neither can the TABULA figure - see the section above. Deciding whether a
+balance is right needs a reference with the same node structure, which neither
+TABULA nor the golden fixture is.
